@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h4 mb-0 fw-bold">Dashboard</h2>
+    <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#addLoadModal">
+        <i class="bi bi-plus-lg"></i> Add Load
+    </button>
+</div>
+
+<!-- Active Load Section -->
+<h6 class="text-muted text-uppercase small fw-bold mt-4">Current Load</h6>
+{% if active_loads %}
+    {% for load in active_loads %}
+    <div class="card border-primary mb-3 shadow-sm" style="border-width: 2px;">
+        <div class="card-body">
+            <div class="d-flex justify-content-between">
+                <span class="badge bg-primary mb-2 text-uppercase">{{ load.status }}</span>
+                <span class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</span>
+            </div>
+            <h5 class="card-title text-truncate">{{ load.pickup_location }} <i class="bi bi-arrow-right"></i> {{ load.delivery_location }}</h5>
+            <p class="card-text text-muted small mb-1">
+                <i class="bi bi-building"></i> {{ load.broker_name }} | Ref: {{ load.load_reference }}
+            </p>
+            <p class="card-text text-muted small mb-3">
+                <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
+            </p>
+            <div class="d-grid">
+                <button class="btn btn-outline-primary btn-sm">Mark Delivered</button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="card mb-3 bg-light border-dashed text-center py-4">
+        <div class="card-body text-muted">
+            <p class="mb-0">No active load right now.</p>
+            <small>Tap 'Add Load' when you sign a rate con.</small>
+        </div>
+    </div>
+{% endif %}
+
+<!-- Recent/Past Loads Section -->
+<h6 class="text-muted text-uppercase small fw-bold mt-4">Pending Action</h6>
+{% if recent_loads %}
+    {% for load in recent_loads %}
+    <div class="card mb-2 shadow-sm border-0">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-bold fs-6">{{ load.delivery_location }}</div>
+                    <div class="text-muted small">{{ load.broker_name }}</div>
+                </div>
+                <div class="text-end">
+                    <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
+                    {% if load.status == 'Delivered' %}
+                        <span class="badge bg-warning text-dark">Need to Invoice</span>
+                    {% elif load.status == 'Invoiced' %}
+                        <span class="badge bg-info text-dark">Waiting on Pay</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <p class="text-muted small">All caught up!</p>
+{% endif %}
+
+<!-- Add Load Modal (HTMX Powered) -->
+<div class="modal fade" id="addLoadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Scan Rate Confirmation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                
+                <!-- 1. The HTMX File Upload Form -->
+                <form id="uploadForm" 
+                      hx-post="/parse-rate-con-html/" 
+                      hx-encoding="multipart/form-data" 
+                      hx-target="#ai-results" 
+                      hx-indicator="#loading-spinner">
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Upload PDF</label>
+                        <input class="form-control" type="file" name="file" accept="application/pdf, image/jpeg, image/png, image/webp" required>
+                    </div>
+                    <button type="submit" class="btn btn-dark w-100">
+                        <i class="bi bi-magic"></i> Extract with AI
+                    </button>
+                </form>
+
+                <!-- 2. The Loading Spinner (Hidden by default, shown by HTMX) -->
+                <div id="loading-spinner" class="htmx-indicator text-center my-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted small">AI is reading the Rate Con...</p>
+                </div>
+
+                <!-- 3. Where the HTML snippet will be injected -->
+                <div id="ai-results" class="mt-4"></div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add this tiny style block so HTMX knows how to hide/show the spinner -->
+<style>
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: block; }
+    .htmx-request.htmx-indicator { display: block; }
+</style>
+
+{% endblock %}

@@ -1,0 +1,40 @@
+<!-- This is returned by FastAPI and injected into the page by HTMX -->
+<form hx-post="/create-load-web/" hx-swap="none" id="saveLoadForm">
+    <div class="row g-2 mb-3">
+        <div class="col-12">
+            <label class="small text-muted">Broker Name</label>
+            <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Rate Amount ($)</label>
+            <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Load Ref #</label>
+            <input type="text" name="load_reference" class="form-control" value="{{ data.load_reference }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Pickup Loc</label>
+            <input type="text" name="pickup_location" class="form-control" value="{{ data.pickup_location }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Pickup Date</label>
+            <input type="date" name="pickup_date" class="form-control" value="{{ data.pickup_date }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Delivery Loc</label>
+            <input type="text" name="delivery_location" class="form-control" value="{{ data.delivery_location }}" required>
+        </div>
+        <div class="col-6">
+            <label class="small text-muted">Delivery Date</label>
+            <input type="date" name="delivery_date" class="form-control" value="{{ data.delivery_date }}" required>
+        </div>
+        <div class="col-12">
+            <label class="small text-muted">Notes (from AI)</label>
+            <textarea name="notes" class="form-control" rows="2">{{ data.notes }}</textarea>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-success w-100 fw-bold">
+        <i class="bi bi-check-circle"></i> Confirm & Save Load
+    </button>
+</form>
