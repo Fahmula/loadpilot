@@ -100,3 +100,21 @@ def create_load_web(
     # HTMX Magic: This header tells the browser to instantly refresh the page 
     # so the new load shows up on the dashboard!
     return Response(headers={"HX-Refresh": "true"})
+
+@router.post("/update-load-status/{load_id}/{new_status}")
+def update_load_status(load_id: int, new_status: str, db: Session = Depends(get_db)):
+    """HTMX endpoint: Updates the status of a load and refreshes the page."""
+    
+    # Map the string from the URL to our actual LoadStatus Enum
+    status_map = {
+        "Delivered": models.LoadStatus.DELIVERED,
+        "Invoiced": models.LoadStatus.INVOICED,
+        "Paid": models.LoadStatus.PAID
+    }
+    
+    if new_status in status_map:
+        update_data = schemas.LoadUpdate(status=status_map[new_status])
+        crud.update_load(db=db, load_id=load_id, load_update=update_data)
+        
+    # HX-Refresh tells the browser to reload the dashboard instantly
+    return Response(headers={"HX-Refresh": "true"})

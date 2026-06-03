@@ -26,7 +26,11 @@
                 <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
             </p>
             <div class="d-grid">
-                <button class="btn btn-outline-primary btn-sm">Mark Delivered</button>
+                <button hx-post="/update-load-status/{{ load.id }}/Delivered" 
+                        hx-confirm="Did you drop this load?"
+                        class="btn btn-outline-primary btn-sm fw-bold">
+                    <i class="bi bi-box-seam"></i> Mark Delivered
+                </button>
             </div>
         </div>
     </div>
@@ -53,10 +57,23 @@
                 </div>
                 <div class="text-end">
                     <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
+                    
                     {% if load.status == 'Delivered' %}
-                        <span class="badge bg-warning text-dark">Need to Invoice</span>
+                        <!-- For now, this just changes the status. In the next step, we will make this generate the PDF! -->
+                        <button hx-post="/update-load-status/{{ load.id }}/Invoiced"
+                                class="btn btn-sm btn-warning mt-1 fw-bold" style="font-size: 0.75rem;">
+                            <i class="bi bi-receipt"></i> Invoice Load
+                        </button>
+                        
                     {% elif load.status == 'Invoiced' %}
-                        <span class="badge bg-info text-dark">Waiting on Pay</span>
+                        <button hx-post="/update-load-status/{{ load.id }}/Paid"
+                                hx-confirm="Did the money hit the bank?"
+                                class="btn btn-sm btn-info mt-1 fw-bold" style="font-size: 0.75rem;">
+                            <i class="bi bi-cash-coin"></i> Mark Paid
+                        </button>
+                        
+                    {% elif load.status == 'Paid' %}
+                         <span class="badge bg-success mt-1"><i class="bi bi-check-all"></i> Paid</span>
                     {% endif %}
                 </div>
             </div>
