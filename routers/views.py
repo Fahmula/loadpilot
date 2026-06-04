@@ -1,9 +1,13 @@
+import os
+import shutil
+import uuid
+from datetime import datetime, date
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from httpx import request
 from sqlalchemy.orm import Session
-from datetime import datetime
+from weasyprint import HTML
 
 import crud
 import models
@@ -160,3 +164,47 @@ def save_settings(
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     """)
+
+@router.post("/generate-invoice/{load_id}")
+async def generate_invoice(load_id: int, db: Session = Depends(get_db), bol_file: UploadFile = File(...)):
+    """Uploads BOL, generates PDF invoice, and marks load as Invoiced."""
+    
+    load = crud.get_load(db, load_id)
+    settings = crud.get_settings(db)
+    
+    # 1. Save the uploaded BOL image/PDF
+    os.makedirs("static/bols", exist_ok=True)
+    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{bol_file.filename}"
+    bol_path = f"static/bols/{bol_filename}"
+    
+    with open(bol_path, "wb") as buffer:
+        shutil.copyfileobj(bol_file.file, buffer)
+        
+    # 2. Generate Invoice Number (e.g., INV-1005)
+    invoice_num = f"INV-{1000 + load.id}"
+    
+    # 3. Render the HTML Template to a string
+    html_content = templates.get_template("invoice_template.html").render({
+        "load": load,
+        "settings": settings,
+        "invoice_number": invoice_num,
+        "date_today": date.today().strftime("%b %d, %Y")
+    })
+    
+    # 4. Convert HTML to PDF using WeasyPrint
+    os.makedirs("static/invoices", exist_ok=True)
+    pdf_filename = f"invoice_{invoice_num}.pdf"
+    pdf_path = f"static/invoices/{pdf_filename}"
+    
+    HTML(string=html_content).write_pdf(pdf_path)
+    
+    # 5. Update Database Load Record
+    update_data = schemas.LoadUpdate(
+        status=models.LoadStatus.INVOICED,
+        invoice_number=invoice_num,
+        bol_pdf_path=bol_path,
+        rate_con_pdf_path=pdf_path # Reusing this column to store the invoice path for now
+    )
+    crud.update_load(db, load_id, update_data)
+    
+    return RedirectResponse(url="/", status_code=303)

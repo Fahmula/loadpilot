@@ -66,10 +66,10 @@
                         </button>
                         
                     {% elif load.status == 'Invoiced' %}
-                        <button hx-post="/update-load-status/{{ load.id }}/Paid"
-                                hx-confirm="Did the money hit the bank?"
-                                class="btn btn-sm btn-info mt-1 fw-bold" style="font-size: 0.75rem;">
-                            <i class="bi bi-cash-coin"></i> Mark Paid
+                        <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/' + '{{ load.id }}';"
+                                class="btn btn-sm btn-warning mt-1 fw-bold" style="font-size: 0.75rem;" 
+                                data-bs-toggle="modal" data-bs-target="#invoiceModal">
+                            <i class="bi bi-receipt"></i> Invoice Load
                         </button>
                         
                     {% elif load.status == 'Paid' %}
@@ -119,6 +119,33 @@
                 <!-- 3. Where the HTML snippet will be injected -->
                 <div id="ai-results" class="mt-4"></div>
 
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generate Invoice Modal -->
+<div class="modal fade" id="invoiceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Generate Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="invoiceForm" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" id="invoiceLoadId" value="">
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Upload Signed BOL</label>
+                        <input class="form-control" type="file" name="bol_file" accept="image/*, application/pdf" required>
+                        <div class="form-text">Take a picture of the signed Bill of Lading.</div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-warning w-100 fw-bold shadow-sm">
+                        <i class="bi bi-file-earmark-pdf"></i> Generate PDF Invoice
+                    </button>
+                </form>
             </div>
         </div>
     </div>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ invoice_number }}</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 0; padding: 40px; }
+        .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+        .company-info h1 { margin: 0 0 10px 0; font-size: 24px; color: #0d6efd; text-transform: uppercase; }
+        .company-info p { margin: 2px 0; font-size: 14px; }
+        .invoice-title { text-align: right; }
+        .invoice-title h2 { margin: 0 0 5px 0; font-size: 36px; color: #333; text-transform: uppercase; letter-spacing: 2px; }
+        .invoice-title p { margin: 2px 0; font-size: 14px; font-weight: bold; }
+        
+        .billing-row { display: flex; justify-content: space-between; margin-bottom: 40px; }
+        .bill-to h3 { margin: 0 0 10px 0; font-size: 16px; color: #666; text-transform: uppercase; }
+        .bill-to p { margin: 2px 0; font-size: 16px; font-weight: bold; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+        th { background-color: #f8f9fa; text-align: left; padding: 12px; border-bottom: 2px solid #dee2e6; font-size: 12px; text-transform: uppercase; color: #666; }
+        td { padding: 12px; border-bottom: 1px solid #dee2e6; font-size: 14px; }
+        
+        .totals { width: 50%; float: right; }
+        .totals table th { background: transparent; text-align: right; padding-right: 20px; border: none; font-size: 16px; color: #333; }
+        .totals table td { text-align: right; font-size: 20px; font-weight: bold; color: #198754; border: none; }
+        
+        .footer { clear: both; margin-top: 60px; padding-top: 20px; border-top: 1px solid #dee2e6; font-size: 12px; color: #666; }
+        .bank-info h4 { margin: 0 0 5px 0; color: #333; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="company-info">
+            <h1>{{ settings.company_name or 'My Trucking Co' }}</h1>
+            {% if settings.show_address_on_invoice %}
+                <p>{{ settings.street_address or '' }}</p>
+                <p>{{ settings.city_state_zip or '' }}</p>
+            {% endif %}
+        </div>
+        <div class="invoice-title">
+            <h2>INVOICE</h2>
+            <p>Invoice #: {{ invoice_number }}</p>
+            <p>Date: {{ date_today }}</p>
+        </div>
+    </div>
+
+    <div class="billing-row">
+        <div class="bill-to">
+            <h3>Bill To:</h3>
+            <p>{{ load.broker_name }}</p>
+            <p style="font-weight: normal; color: #666;">Ref / Load #: {{ load.load_reference }}</p>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Pickup</th>
+                <th>Delivery</th>
+                <th style="text-align: right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Freight Transportation Services<br><small style="color:#666;">Load #{{ load.load_reference }}</small></td>
+                <td>{{ load.pickup_location }}<br><small style="color:#666;">{{ load.pickup_date }}</small></td>
+                <td>{{ load.delivery_location }}<br><small style="color:#666;">{{ load.delivery_date }}</small></td>
+                <td style="text-align: right;">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="totals">
+        <table>
+            <tr>
+                <th>Total Due:</th>
+                <td>${{ "{:,.2f}".format(load.rate_amount) }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        {% if settings.show_bank_on_invoice and settings.bank_name %}
+        <div class="bank-info">
+            <h4>Direct Deposit / ACH Instructions:</h4>
+            <p>Bank Name: {{ settings.bank_name }} | Routing #: {{ settings.routing_number }} | Account #: {{ settings.account_number }}</p>
+        </div>
+        {% else %}
+        <p>Thank you for your business. Please remit payment referencing Invoice #{{ invoice_number }}.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>
