@@ -77,6 +77,8 @@ def create_load_web(
     pickup_date: str = Form(...),
     delivery_location: str = Form(...),
     delivery_date: str = Form(...),
+    loaded_miles: int = Form(...),
+    empty_miles: int = Form(...),  
     notes: str = Form(None)
 ):
     """HTMX endpoint: Saves the form data and refreshes the dashboard."""
@@ -94,6 +96,8 @@ def create_load_web(
         pickup_date=p_date,
         delivery_location=delivery_location,
         delivery_date=d_date,
+        loaded_miles=loaded_miles,
+        empty_miles=empty_miles,
         notes=notes,
         status=models.LoadStatus.ACTIVE
     )

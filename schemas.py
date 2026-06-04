@@ -13,6 +13,8 @@ class LoadBase(BaseModel):
     pickup_location: str
     pickup_date: date
     delivery_location: str
+    loaded_miles: int = 0 
+    empty_miles: int = 0 
     delivery_date: date
     status: LoadStatus = LoadStatus.DRAFT
     notes: Optional[str] = None

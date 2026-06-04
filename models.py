@@ -27,6 +27,8 @@ class Load(Base):
     pickup_date = Column(Date, nullable=False)
     delivery_location = Column(String, nullable=False) # e.g., "Dallas, TX"
     delivery_date = Column(Date, nullable=False)
+    loaded_miles = Column(Integer, nullable=False, default=0)
+    empty_miles = Column(Integer, nullable=False, default=0)
     
     # Status
     status = Column(Enum(LoadStatus), default=LoadStatus.DRAFT)

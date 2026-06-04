@@ -5,11 +5,19 @@
             <label class="small text-muted">Broker Name</label>
             <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name }}" required>
         </div>
-        <div class="col-6">
-            <label class="small text-muted">Rate Amount ($)</label>
+        <div class="col-3">
+            <label class="small text-muted">Rate ($)</label>
             <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount }}" required>
         </div>
-        <div class="col-6">
+        <div class="col-3">
+            <label class="small text-muted">Loaded Mi</label>
+            <input type="number" name="loaded_miles" class="form-control" value="{{ data.loaded_miles or 0 }}" required>
+        </div>
+        <div class="col-3">
+            <label class="small text-muted">Empty Mi</label>
+            <input type="number" name="empty_miles" class="form-control" value="{{ data.empty_miles or 0 }}" required>
+        </div>
+        <div class="col-3">
             <label class="small text-muted">Load Ref #</label>
             <input type="text" name="load_reference" class="form-control" value="{{ data.load_reference }}" required>
         </div>
