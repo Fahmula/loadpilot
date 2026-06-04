@@ -22,6 +22,16 @@ def get_loads(db: Session, skip: int = 0, limit: int = 100, status: models.LoadS
     # Order by pickup date descending (newest first)
     return query.order_by(models.Load.pickup_date.desc()).offset(skip).limit(limit).all()
 
+def get_settings(db: Session):
+    """Get the company settings (always ID 1). If it doesn't exist, create it."""
+    settings = db.query(models.CompanySettings).filter(models.CompanySettings.id == 1).first()
+    if not settings:
+        settings = models.CompanySettings(id=1, company_name="My Trucking Co")
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
 
 # ----------------- CREATE -----------------
 
@@ -55,6 +65,14 @@ def update_load(db: Session, load_id: int, load_update: schemas.LoadUpdate):
     db.commit()
     db.refresh(db_load)
     return db_load
+
+def update_settings(db: Session, settings_data: schemas.SettingsUpdate):
+    settings = get_settings(db)
+    for key, value in settings_data.model_dump().items():
+        setattr(settings, key, value)
+    db.commit()
+    db.refresh(settings)
+    return settings
 
 
 # ----------------- DELETE -----------------

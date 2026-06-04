@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Float, Text, Enum, Date
+from sqlalchemy import Column, Integer, String, Float, Text, Enum, Date, Boolean
 from database import Base
 
 class LoadStatus(str, enum.Enum):
@@ -13,6 +13,8 @@ class Load(Base):
     __tablename__ = "loads"
 
     id = Column(Integer, primary_key=True, index=True)
+
+    invoice_number = Column(String, unique=True, index=True, nullable=True)
     
     # Broker Info
     broker_name = Column(String, index=True)
@@ -32,6 +34,23 @@ class Load(Base):
     # Extras
     notes = Column(Text, nullable=True) # Pickup numbers, gate codes, etc.
     
-    # File storage (saving the paths to where the files are stored on your server/computer)
+    # File storage
     rate_con_pdf_path = Column(String, nullable=True)
     bol_pdf_path = Column(String, nullable=True)
+
+class CompanySettings(Base):
+    __tablename__ = "settings"
+    
+    id = Column(Integer, primary_key=True, index=True, default=1)
+    
+    # Company Info
+    company_name = Column(String, nullable=True)
+    street_address = Column(String, nullable=True)
+    city_state_zip = Column(String, nullable=True)
+    show_address_on_invoice = Column(Boolean, default=True)
+    
+    # Banking Info (Optional)
+    bank_name = Column(String, nullable=True)
+    account_number = Column(String, nullable=True)
+    routing_number = Column(String, nullable=True)
+    show_bank_on_invoice = Column(Boolean, default=False)

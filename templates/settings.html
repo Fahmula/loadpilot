@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="h4 mb-4 fw-bold">Company Settings</h2>
+
+<form hx-post="/settings/save" hx-target="#save-result" class="pb-5">
+    
+    <!-- General Info Card -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <h6 class="card-title text-primary fw-bold mb-3"><i class="bi bi-building"></i> Company Info</h6>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Company Name</label>
+                <input type="text" name="company_name" class="form-control" value="{{ settings.company_name or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Street Address</label>
+                <input type="text" name="street_address" class="form-control" value="{{ settings.street_address or '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label small text-muted">City, State ZIP</label>
+                <input type="text" name="city_state_zip" class="form-control" value="{{ settings.city_state_zip or '' }}">
+            </div>
+            <div class="form-check form-switch mt-2">
+                <input class="form-check-input" type="checkbox" name="show_address_on_invoice" value="true" {% if settings.show_address_on_invoice %}checked{% endif %}>
+                <label class="form-check-label small">Show Address on Invoices</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banking Info Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h6 class="card-title text-primary fw-bold mb-3"><i class="bi bi-bank"></i> Banking Info (Optional)</h6>
+            <div class="mb-3">
+                <label class="form-label small text-muted">Bank Name</label>
+                <input type="text" name="bank_name" class="form-control" value="{{ settings.bank_name or '' }}">
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label small text-muted">Account #</label>
+                    <input type="text" name="account_number" class="form-control" value="{{ settings.account_number or '' }}">
+                </div>
+                <div class="col-6">
+                    <label class="form-label small text-muted">Routing #</label>
+                    <input type="text" name="routing_number" class="form-control" value="{{ settings.routing_number or '' }}">
+                </div>
+            </div>
+            <div class="form-check form-switch mt-2">
+                <input class="form-check-input" type="checkbox" name="show_bank_on_invoice" value="true" {% if settings.show_bank_on_invoice %}checked{% endif %}>
+                <label class="form-check-label small">Include Direct Deposit info on Invoices</label>
+            </div>
+        </div>
+    </div>
+
+    <div id="save-result"></div> <!-- HTMX puts the success message here -->
+
+    <button type="submit" class="btn btn-primary w-100 fw-bold shadow-sm mb-4">
+        <i class="bi bi-save"></i> Save Settings
+    </button>
+</form>
+{% endblock %}

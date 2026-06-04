@@ -44,3 +44,14 @@ class LoadResponse(LoadBase):
 
     class Config:
         from_attributes = True  # This allows Pydantic to read SQLAlchemy models
+        
+# Schema for updating company settings        
+class SettingsUpdate(BaseModel):
+    company_name: Optional[str] = None
+    street_address: Optional[str] = None
+    city_state_zip: Optional[str] = None
+    show_address_on_invoice: bool = True
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    routing_number: Optional[str] = None
+    show_bank_on_invoice: bool = False

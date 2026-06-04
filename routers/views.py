@@ -118,3 +118,45 @@ def update_load_status(load_id: int, new_status: str, db: Session = Depends(get_
         
     # HX-Refresh tells the browser to reload the dashboard instantly
     return Response(headers={"HX-Refresh": "true"})
+
+@router.get("/settings")
+def settings_page(request: Request, db: Session = Depends(get_db)):
+    settings = crud.get_settings(db)
+    return templates.TemplateResponse(
+        request=request, 
+        name="settings.html", 
+        context={"settings": settings}
+    )
+
+@router.post("/settings/save")
+def save_settings(
+    db: Session = Depends(get_db),
+    company_name: str = Form(""),
+    street_address: str = Form(""),
+    city_state_zip: str = Form(""),
+    show_address_on_invoice: bool = Form(False),
+    bank_name: str = Form(""),
+    account_number: str = Form(""),
+    routing_number: str = Form(""),
+    show_bank_on_invoice: bool = Form(False)
+):
+    """HTMX endpoint to save settings and show a success message."""
+    settings_data = schemas.SettingsUpdate(
+        company_name=company_name,
+        street_address=street_address,
+        city_state_zip=city_state_zip,
+        show_address_on_invoice=show_address_on_invoice,
+        bank_name=bank_name,
+        account_number=account_number,
+        routing_number=routing_number,
+        show_bank_on_invoice=show_bank_on_invoice
+    )
+    crud.update_settings(db, settings_data)
+    
+    # Return a green success alert that HTMX will swap into the page
+    return Response("""
+        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+            <i class="bi bi-check-circle"></i> Settings saved successfully!
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    """)
