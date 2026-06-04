@@ -59,21 +59,34 @@
                     <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
                     
                     {% if load.status == 'Delivered' %}
-                        <!-- For now, this just changes the status. In the next step, we will make this generate the PDF! -->
-                        <button hx-post="/update-load-status/{{ load.id }}/Invoiced"
-                                class="btn btn-sm btn-warning mt-1 fw-bold" style="font-size: 0.75rem;">
-                            <i class="bi bi-receipt"></i> Invoice Load
-                        </button>
-                        
-                    {% elif load.status == 'Invoiced' %}
-                        <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/' + '{{ load.id }}';"
-                                class="btn btn-sm btn-warning mt-1 fw-bold" style="font-size: 0.75rem;" 
+                        <!-- This ONLY opens the modal to upload the BOL and generate the PDF -->
+                        <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/{{ load.id }}';"
+                                class="btn btn-sm btn-warning mt-1 fw-bold shadow-sm" style="font-size: 0.75rem;" 
                                 data-bs-toggle="modal" data-bs-target="#invoiceModal">
                             <i class="bi bi-receipt"></i> Invoice Load
                         </button>
                         
+                    {% elif load.status == 'Invoiced' %}
+                        <!-- Shows the generated PDF and the button to mark it Paid -->
+                        <div class="mt-1">
+                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-file-pdf"></i> PDF
+                            </a>
+                            <button hx-post="/update-load-status/{{ load.id }}/Paid"
+                                    hx-confirm="Did the money hit the bank?"
+                                    class="btn btn-sm btn-info fw-bold shadow-sm" style="font-size: 0.75rem;">
+                                <i class="bi bi-cash-coin"></i> Mark Paid
+                            </button>
+                        </div>
+                        
                     {% elif load.status == 'Paid' %}
-                         <span class="badge bg-success mt-1"><i class="bi bi-check-all"></i> Paid</span>
+                        <!-- Shows PDF and a green Paid badge -->
+                        <div class="mt-1">
+                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-file-pdf"></i> PDF
+                            </a>
+                            <span class="badge bg-success shadow-sm"><i class="bi bi-check-all"></i> Paid</span>
+                        </div>
                     {% endif %}
                 </div>
             </div>
