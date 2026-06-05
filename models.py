@@ -7,7 +7,6 @@ class LoadStatus(str, enum.Enum):
     ACTIVE = "Active"
     DELIVERED = "Delivered"
     INVOICED = "Invoiced"
-    PAID = "Paid"
 
 class Load(Base):
     __tablename__ = "loads"
@@ -18,17 +17,16 @@ class Load(Base):
     
     # Broker Info
     broker_name = Column(String, index=True)
-    broker_email = Column(String, nullable=True) # Useful for sending the invoice later
+    broker_email = Column(String, nullable=True)
     load_reference = Column(String, index=True)  # Broker's Load ID / PO Number
     
     # Load Details
     rate_amount = Column(Float, nullable=False)
-    pickup_location = Column(String, nullable=False)   # e.g., "Chicago, IL"
+    pickup_location = Column(String, nullable=False)   
     pickup_date = Column(Date, nullable=False)
-    delivery_location = Column(String, nullable=False) # e.g., "Dallas, TX"
+    delivery_location = Column(String, nullable=False)
     delivery_date = Column(Date, nullable=False)
     loaded_miles = Column(Integer, nullable=False, default=0)
-    empty_miles = Column(Integer, nullable=False, default=0)
     
     # Status
     status = Column(Enum(LoadStatus), default=LoadStatus.DRAFT)

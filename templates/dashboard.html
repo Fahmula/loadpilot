@@ -67,25 +67,14 @@
                         </button>
                         
                     {% elif load.status == 'Invoiced' %}
-                        <!-- Shows the generated PDF and the button to mark it Paid -->
+                        <!-- Shows the generated PDF and the button to mark it Invoiced -->
                         <div class="mt-1">
                             <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
                                 <i class="bi bi-file-pdf"></i> PDF
                             </a>
-                            <button hx-post="/update-load-status/{{ load.id }}/Paid"
-                                    hx-confirm="Did the money hit the bank?"
-                                    class="btn btn-sm btn-info fw-bold shadow-sm" style="font-size: 0.75rem;">
-                                <i class="bi bi-cash-coin"></i> Mark Paid
-                            </button>
-                        </div>
-                        
-                    {% elif load.status == 'Paid' %}
-                        <!-- Shows PDF and a green Paid badge -->
-                        <div class="mt-1">
-                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
-                                <i class="bi bi-file-pdf"></i> PDF
-                            </a>
-                            <span class="badge bg-success shadow-sm"><i class="bi bi-check-all"></i> Paid</span>
+                            <span class="badge bg-info text-dark shadow-sm" style="font-size: 0.75rem;">
+                                <i class="bi bi-receipt"></i> Invoiced
+                            </span>
                         </div>
                     {% endif %}
                 </div>

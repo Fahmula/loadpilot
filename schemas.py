@@ -14,7 +14,6 @@ class LoadBase(BaseModel):
     pickup_date: date
     delivery_location: str
     loaded_miles: int = 0 
-    empty_miles: int = 0 
     delivery_date: date
     status: LoadStatus = LoadStatus.DRAFT
     notes: Optional[str] = None
@@ -23,7 +22,6 @@ class LoadBase(BaseModel):
 class LoadCreate(LoadBase):
     pass
 
-# Schema for updating a load (makes all fields optional so you can update just one thing, like status)
 class LoadUpdate(BaseModel):
     broker_name: Optional[str] = None
     broker_email: Optional[str] = None

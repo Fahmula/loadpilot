@@ -29,7 +29,6 @@ def parse_rate_con_with_ai(file_bytes: bytes, mime_type: str):
         "delivery_location": "String (City, State)",
         "delivery_date": "YYYY-MM-DD",
         "loaded_miles": 0 (Integer, look for 'Miles' or 'Loaded Miles'. Return 0 if not found),
-        "empty_miles": 0 (Integer, always return 0),
         "notes": "String (Look for pickup numbers, seal numbers, or special instructions. null if none)"
     }
     """
