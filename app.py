@@ -51,16 +51,15 @@ if not logger.handlers:
 
 app_logger = logging.getLogger("loadpilot.app")
 
+Path("/config/bols").mkdir(parents=True, exist_ok=True)
+Path("/config/invoices").mkdir(parents=True, exist_ok=True)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db_path = "/config/loadpilot.db"
     db = DatabaseManager(db_path=db_path)
     await db.init_db()
     app.state.db = db
-    
-    # Ensure static directories exist
-    Path("static/bols").mkdir(parents=True, exist_ok=True)
-    Path("static/invoices").mkdir(parents=True, exist_ok=True)
 
     app_logger.info("LoadPilot started successfully.")
     yield
@@ -68,6 +67,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LoadPilot API", lifespan=lifespan)
 
+app.mount("/static/bols", StaticFiles(directory="/config/bols"), name="bols")
+app.mount("/static/invoices", StaticFiles(directory="/config/invoices"), name="invoices")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(api.router)

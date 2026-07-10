@@ -202,17 +202,21 @@ async def save_settings(
         </div>
     """)
 
+from pathlib import Path
+
 @router.post("/generate-invoice/{load_id}")
 async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile = File(...)):
     db = request.app.state.db
     load = await db.get_load(load_id)
     settings = await db.get_all_settings()
     
-    os.makedirs("static/bols", exist_ok=True)
-    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{bol_file.filename}"
-    bol_path = f"static/bols/{bol_filename}"
+    bol_dir = Path("/config/bols")
+    invoice_dir = Path("/config/invoices")
     
-    with open(bol_path, "wb") as buffer:
+    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{bol_file.filename}"
+    bol_physical_path = bol_dir / bol_filename
+    
+    with open(str(bol_physical_path), "wb") as buffer:
         await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
         
     invoice_num = f"INV-{1000 + load.id}"
@@ -224,17 +228,19 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
         "date_today": date.today().strftime("%b %d, %Y")
     })
     
-    os.makedirs("static/invoices", exist_ok=True)
     pdf_filename = f"invoice_{invoice_num}.pdf"
-    pdf_path = f"static/invoices/{pdf_filename}"
+    pdf_physical_path = invoice_dir / pdf_filename
     
-    await asyncio.to_thread(HTML(string=html_content).write_pdf, pdf_path)
+    await asyncio.to_thread(HTML(string=html_content).write_pdf, str(pdf_physical_path))
+    
+    bol_web_path = f"static/bols/{bol_filename}"
+    invoice_web_path = f"static/invoices/{pdf_filename}"
     
     await db.update_load(load_id, {
         "status": LoadStatus.INVOICED.value,
         "invoice_number": invoice_num,
-        "bol_pdf_path": bol_path,
-        "rate_con_pdf_path": pdf_path
+        "bol_pdf_path": bol_web_path,
+        "rate_con_pdf_path": invoice_web_path
     })
     
     return RedirectResponse(url="/", status_code=303)
