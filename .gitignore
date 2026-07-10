@@ -131,6 +131,7 @@ dmypy.json
 # Custom
 logs
 config
+static
 desktop.ini
 *.json
 !manifest.json
