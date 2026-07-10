@@ -38,6 +38,13 @@
                     <strong>Loaded Miles:</strong> {{ load.loaded_miles }} mi<br>
                     <strong>Notes:</strong> {{ load.notes or 'No notes provided.' }}
                 </div>
+                <div class="text-end">
+                    <button hx-post="/delete-load-web/{{ load.id }}"
+                            hx-confirm="Are you sure you want to cancel/delete this load?"
+                            class="btn btn-link text-danger btn-sm p-0 text-decoration-none fw-bold">
+                        <i class="bi bi-trash-fill"></i> Cancel / Delete Load
+                    </button>
+                </div>
             </div>
 
             <div class="d-grid">

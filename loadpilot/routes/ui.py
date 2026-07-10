@@ -238,3 +238,9 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     })
     
     return RedirectResponse(url="/", status_code=303)
+
+@router.post("/delete-load-web/{load_id}")
+async def delete_load_web(request: Request, load_id: int):
+    db = request.app.state.db
+    await db.delete_load(load_id)
+    return Response(headers={"HX-Refresh": "true"})
