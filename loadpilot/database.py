@@ -24,6 +24,7 @@ class DatabaseManager:
                     pickup_date TEXT NOT NULL,
                     delivery_location TEXT NOT NULL,
                     delivery_date TEXT NOT NULL,
+                    actual_delivery_date TEXT,
                     loaded_miles INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL,
                     notes TEXT,
@@ -80,16 +81,18 @@ class DatabaseManager:
     # -----------------------------------------
     async def add_load(self, load: Load) -> Load:
         async with aiosqlite.connect(self.db_path) as db:
+            actual_del = load.actual_delivery_date.isoformat() if load.actual_delivery_date else None
             cursor = await db.execute(
                 """INSERT INTO loads (
                     invoice_number, broker_name, broker_email, load_reference, 
                     rate_amount, pickup_location, pickup_date, delivery_location, 
-                    delivery_date, loaded_miles, status, notes, rate_con_pdf_path, bol_pdf_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    delivery_date, actual_delivery_date, loaded_miles, status, notes, 
+                    rate_con_pdf_path, bol_pdf_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number, load.broker_name, load.broker_email, load.load_reference,
                     load.rate_amount, load.pickup_location, load.pickup_date.isoformat(), load.delivery_location,
-                    load.delivery_date.isoformat(), load.loaded_miles, load.status.value, load.notes,
+                    load.delivery_date.isoformat(), actual_del, load.loaded_miles, load.status.value, load.notes,
                     load.rate_con_pdf_path, load.bol_pdf_path
                 )
             )
@@ -168,6 +171,9 @@ class DatabaseManager:
             return cursor.rowcount > 0
 
     def _row_to_load(self, row: aiosqlite.Row) -> Load:
+        actual_del_val = row["actual_delivery_date"]
+        actual_delivery_date = date.fromisoformat(actual_del_val) if actual_del_val else None
+        
         return Load(
             id=row["id"],
             invoice_number=row["invoice_number"],
@@ -179,6 +185,7 @@ class DatabaseManager:
             pickup_date=date.fromisoformat(row["pickup_date"]),
             delivery_location=row["delivery_location"],
             delivery_date=date.fromisoformat(row["delivery_date"]),
+            actual_delivery_date=actual_delivery_date,
             loaded_miles=row["loaded_miles"],
             status=LoadStatus(row["status"]),
             notes=row["notes"],

@@ -125,7 +125,12 @@ async def update_load_status(request: Request, load_id: int, new_status: str):
     }
     
     if new_status in status_map:
-        await db.update_load(load_id, {"status": status_map[new_status].value})
+        update_data = {"status": status_map[new_status].value}
+        
+        if status_map[new_status] == LoadStatus.DELIVERED:
+            update_data["actual_delivery_date"] = date.today().isoformat()
+            
+        await db.update_load(load_id, update_data)
         
     return Response(headers={"HX-Refresh": "true"})
 

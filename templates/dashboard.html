@@ -29,7 +29,7 @@
                 <p class="card-text text-muted small mb-2">
                     <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
                 </p>
-                <p class="text-primary small mb-2"><i class="bi bi-info-circle"></i> Tap card to see details/notes</p>
+                <p class="text-primary small mb-2"><i class="bi bi-info-circle"></i> Tap to see details/notes</p>
             </div>
 
             <!-- Expandable Notes Section -->
@@ -96,7 +96,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <div class="fw-bold fs-6">{{ load.delivery_location }}</div>
-                    <div class="text-muted small">{{ load.broker_name }} | Delivered: {{ load.delivery_date }}</div>
+                    <div class="text-muted small">{{ load.broker_name }} | Delivered: {{ load.actual_delivery_date }}</div>
                 </div>
                 <div class="text-end">
                     <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>

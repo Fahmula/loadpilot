@@ -22,8 +22,12 @@
                         <span class="text-muted d-block" style="font-size: 0.75rem;"><i class="bi bi-arrow-down-short"></i> {{ load.delivery_location }}</span>
                     </td>
                     <td>
-                        <span class="badge bg-light text-dark d-block mb-1 small fw-normal border">{{ load.pickup_date }}</span>
-                        <span class="badge bg-secondary text-white d-block small fw-normal">{{ load.delivery_date }}</span>
+                        <span class="badge bg-light text-dark d-block mb-1 small fw-normal border">P: {{ load.pickup_date }}</span>
+                        {% if load.actual_delivery_date %}
+                            <span class="badge bg-success text-white d-block small fw-normal">D: {{ load.actual_delivery_date }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary text-white d-block small fw-normal">Est: {{ load.delivery_date }}</span>
+                        {% endif %}
                     </td>
                     <td>
                         <span class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</span>
@@ -56,6 +60,8 @@
                                 <strong>Load Details:</strong>
                                 <ul class="list-unstyled mb-0 mt-1">
                                     <li><strong>Invoice ID:</strong> {{ load.invoice_number or 'Not invoiced yet' }}</li>
+                                    <li><strong>Scheduled Delivery:</strong> {{ load.delivery_date }}</li>
+                                    <li><strong>Actual Delivery:</strong> {{ load.actual_delivery_date or 'Not delivered yet' }}</li>
                                     <li><strong>Broker Email:</strong> {{ load.broker_email or 'N/A' }}</li>
                                     <li><strong>Total Mileage:</strong> {{ load.loaded_miles }} miles</li>
                                 </ul>

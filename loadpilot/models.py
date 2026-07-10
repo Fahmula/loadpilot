@@ -19,6 +19,7 @@ class Load(BaseModel):
     pickup_date: date
     delivery_location: str
     delivery_date: date
+    actual_delivery_date: date | None = None
     loaded_miles: int = 0
     status: LoadStatus = LoadStatus.DRAFT
     notes: str | None = None

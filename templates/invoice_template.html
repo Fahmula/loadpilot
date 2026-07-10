@@ -66,7 +66,12 @@
             <tr>
                 <td>Freight Transportation Services<br><small style="color:#666;">Load #{{ load.load_reference }}</small></td>
                 <td>{{ load.pickup_location }}<br><small style="color:#666;">{{ load.pickup_date }}</small></td>
-                <td>{{ load.delivery_location }}<br><small style="color:#666;">{{ load.delivery_date }}</small></td>
+                <td>
+                    {{ load.delivery_location }}<br>
+                    <small style="color:#666;">
+                        {{ load.actual_delivery_date or load.delivery_date }}
+                    </small>
+                </td>
                 <td style="text-align: right;">${{ "{:,.2f}".format(load.rate_amount) }}</td>
             </tr>
         </tbody>
