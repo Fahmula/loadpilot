@@ -1,19 +1,18 @@
-# services.py
-import os
 import json
+import logging
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+logger = logging.getLogger(__name__)
 
-def parse_rate_con_with_ai(file_bytes: bytes, mime_type: str):
-    """
-    Sends the raw image or PDF directly to Gemini Vision
-    and forces it to return a JSON object.
-    """
-    
+def parse_rate_con_with_ai(file_bytes: bytes, mime_type: str, api_key: str) -> dict | None:
+    """Sends the raw document bytes directly to Gemini Vision to extract metadata."""
+    if not api_key:
+        logger.error("Missing Gemini API Key. Extraction aborted.")
+        return None
+
     prompt = """
     You are an AI assistant for a trucking owner-operator. 
     Look at the attached document (Rate Confirmation) and extract these exact details.
@@ -32,23 +31,24 @@ def parse_rate_con_with_ai(file_bytes: bytes, mime_type: str):
         "notes": "String (Look for pickup numbers, seal numbers, or special instructions. null if none)"
     }
     """
-    
     try:
-        # Tell Gemini what kind of file we are handing it
+        client = genai.Client(api_key=api_key)
         document_part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
         
-        # Pass BOTH the prompt and the document to Gemini
         response = client.models.generate_content(
-            model='gemini-3.1-flash-lite',
+            model='gemini-2.5-flash',
             contents=[prompt, document_part],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
             )
         )
         
-        result = json.loads(response.text)
-        return result
-        
+        response_text = response.text
+        if not response_text:
+            logger.error("Gemini Vision returned an empty or null response.")
+            return None
+            
+        return json.loads(response_text)
     except Exception as e:
-        print(f"Gemini Vision Parsing Error: {e}")
+        logger.error(f"Gemini Vision Parsing Error: {e}", exc_info=True)
         return None
