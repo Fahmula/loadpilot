@@ -192,3 +192,95 @@ class DatabaseManager:
             rate_con_pdf_path=row["rate_con_pdf_path"],
             bol_pdf_path=row["bol_pdf_path"]
         )
+
+    async def get_analytics_data(self) -> dict:
+        """Aggregates rates, miles, RPM, and broker data for analytics."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM loads WHERE status != 'Draft'") as cursor:
+                rows = await cursor.fetchall()
+                
+            today = date.today()
+            current_year = today.year
+            current_month = today.month
+            
+            # Iso-week calendar metrics for current week groupings
+            current_year_iso, current_week_iso, _ = today.isocalendar()
+            
+            total_revenue = 0.0
+            total_miles = 0
+            
+            ytd_revenue = 0.0
+            ytd_miles = 0
+            
+            monthly_revenue = 0.0
+            monthly_miles = 0
+            
+            weekly_revenue = 0.0
+            weekly_miles = 0
+            
+            broker_map = {} # broker_name -> {"revenue": X, "miles": Y, "load_count": Z}
+            
+            for row in rows:
+                rate = row["rate_amount"]
+                print(rate)
+                miles = row["loaded_miles"] or 0
+                broker = row["broker_name"]
+                
+                delivery_date_str = row["actual_delivery_date"] or row["delivery_date"]
+                delivery_date = date.fromisoformat(delivery_date_str)
+                
+                # Global totals
+                total_revenue += rate
+                total_miles += miles
+                
+                # YTD Metrics
+                if delivery_date.year == current_year:
+                    ytd_revenue += rate
+                    ytd_miles += miles
+                    
+                # Monthly Metrics
+                if delivery_date.year == current_year and delivery_date.month == current_month:
+                    monthly_revenue += rate
+                    monthly_miles += miles
+                    
+                # Weekly Metrics
+                py_year, py_week, _ = delivery_date.isocalendar()
+                if py_year == current_year_iso and py_week == current_week_iso:
+                    weekly_revenue += rate
+                    weekly_miles += miles
+                    
+                # Broker aggregation
+                if broker not in broker_map:
+                    broker_map[broker] = {"revenue": 0.0, "miles": 0, "load_count": 0}
+                broker_map[broker]["revenue"] += rate
+                broker_map[broker]["miles"] += miles
+                broker_map[broker]["load_count"] += 1
+                
+            # Safely calculate RPM
+            def calc_rpm(rev: float, mi: int) -> float:
+                return rev / mi if mi > 0 else 0.0
+                
+            # Broker list sorted by revenue descending
+            broker_list = []
+            for b_name, stats in broker_map.items():
+                stats["rpm"] = calc_rpm(stats["revenue"], stats["miles"])
+                stats["name"] = b_name
+                broker_list.append(stats)
+            broker_list.sort(key=lambda x: x["revenue"], reverse=True)
+            
+            return {
+                "total_revenue": total_revenue,
+                "total_miles": total_miles,
+                "global_rpm": calc_rpm(total_revenue, total_miles),
+                "ytd_revenue": ytd_revenue,
+                "ytd_miles": ytd_miles,
+                "ytd_rpm": calc_rpm(ytd_revenue, ytd_miles),
+                "monthly_revenue": monthly_revenue,
+                "monthly_miles": monthly_miles,
+                "monthly_rpm": calc_rpm(monthly_revenue, monthly_miles),
+                "weekly_revenue": weekly_revenue,
+                "weekly_miles": weekly_miles,
+                "weekly_rpm": calc_rpm(weekly_revenue, weekly_miles),
+                "brokers": broker_list[:5]
+            }

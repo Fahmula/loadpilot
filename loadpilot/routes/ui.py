@@ -245,6 +245,16 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     
     return RedirectResponse(url="/", status_code=303)
 
+@router.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(request: Request):
+    db = request.app.state.db
+    analytics = await db.get_analytics_data()
+    return templates.TemplateResponse(
+        request=request,
+        name="analytics.html",
+        context={"analytics": analytics}
+    )
+
 @router.post("/delete-load-web/{load_id}")
 async def delete_load_web(request: Request, load_id: int):
     db = request.app.state.db
