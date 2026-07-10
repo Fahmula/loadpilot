@@ -124,7 +124,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title fw-bold">Scan Rate Confirmation</h5>
+                <h5 class="modal-title fw-bold">Add Load Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -137,18 +137,28 @@
                       hx-indicator="#loading-spinner">
                     
                     <div class="mb-3">
-                        <label class="form-label small fw-bold">Upload PDF/IMG</label>
-                        <input class="form-control" type="file" name="file" accept="application/pdf, image/jpeg, image/png, image/webp" required>
+                        <label class="form-label small fw-bold">Upload Rate Confirmation Pages (PDF/Images)</label>
+                        <input class="form-control" type="file" name="files" accept="application/pdf, image/jpeg, image/png, image/webp" multiple required>
+                        <div class="form-text small">Select multiple pages or files if needed.</div>
                     </div>
-                    <button type="submit" class="btn btn-dark w-100">
-                        <i class="bi bi-magic"></i> Extract with AI
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-dark flex-grow-1">
+                            <i class="bi bi-magic"></i> Extract with AI
+                        </button>
+                        <button type="button" 
+                                class="btn btn-outline-secondary" 
+                                hx-get="/manual-load-form/" 
+                                hx-target="#ai-results"
+                                hx-indicator="#loading-spinner">
+                            <i class="bi bi-pencil-square"></i> Enter Manually
+                        </button>
+                    </div>
                 </form>
 
                 <!-- 2. The Loading Spinner (Hidden by default, shown by HTMX) -->
                 <div id="loading-spinner" class="htmx-indicator text-center my-4">
                     <div class="spinner-border text-primary" role="status"></div>
-                    <p class="mt-2 text-muted small">AI is reading the Rate Con...</p>
+                    <p class="mt-2 text-muted small">Processing...</p>
                 </div>
 
                 <!-- 3. Where the HTML snippet will be injected -->

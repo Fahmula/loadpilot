@@ -1,6 +1,4 @@
-import pypdf
-import asyncio
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+from fastapi import APIRouter, Request, HTTPException
 from loadpilot.models import Load, LoadStatus
 
 router = APIRouter(prefix="/api/loads", tags=["Loads"])

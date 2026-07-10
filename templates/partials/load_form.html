@@ -3,39 +3,39 @@
     <div class="row g-2 mb-3">
         <div class="col-12">
             <label class="small text-muted">Broker Name</label>
-            <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name }}" required>
+            <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name or '' }}" required>
         </div>
         <div class="col-3">
             <label class="small text-muted">Rate ($)</label>
-            <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount }}" required>
+            <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount or '' }}" required>
         </div>
         <div class="col-3">
             <label class="small text-muted">Loaded Mi</label>
-            <input type="number" name="loaded_miles" class="form-control" value="{{ data.loaded_miles or 0 }}" required>
+            <input type="number" name="loaded_miles" class="form-control" value="{{ data.loaded_miles if data.loaded_miles is not none else 0 }}" required>
         </div>
         <div class="col-3">
             <label class="small text-muted">Load Ref #</label>
-            <input type="text" name="load_reference" class="form-control" value="{{ data.load_reference }}" required>
+            <input type="text" name="load_reference" class="form-control" value="{{ data.load_reference or '' }}" required>
         </div>
         <div class="col-6">
-            <label class="small text-muted">Pickup Loc</label>
-            <input type="text" name="pickup_location" class="form-control" value="{{ data.pickup_location }}" required>
+            <label class="small text-muted">Pickup Loc: City, State</label>
+            <input type="text" name="pickup_location" class="form-control" value="{{ data.pickup_location or '' }}" required>
         </div>
         <div class="col-6">
             <label class="small text-muted">Pickup Date</label>
-            <input type="date" name="pickup_date" class="form-control" value="{{ data.pickup_date }}" required>
+            <input type="date" name="pickup_date" class="form-control" value="{{ data.pickup_date or '' }}" required>
         </div>
         <div class="col-6">
-            <label class="small text-muted">Delivery Loc</label>
-            <input type="text" name="delivery_location" class="form-control" value="{{ data.delivery_location }}" required>
+            <label class="small text-muted">Delivery Loc: City, State</label>
+            <input type="text" name="delivery_location" class="form-control" value="{{ data.delivery_location or '' }}" required>
         </div>
         <div class="col-6">
             <label class="small text-muted">Delivery Date</label>
-            <input type="date" name="delivery_date" class="form-control" value="{{ data.delivery_date }}" required>
+            <input type="date" name="delivery_date" class="form-control" value="{{ data.delivery_date or '' }}" required>
         </div>
         <div class="col-12">
-            <label class="small text-muted">Notes (from AI)</label>
-            <textarea name="notes" class="form-control" rows="2">{{ data.notes }}</textarea>
+            <label class="small text-muted">Notes</label>
+            <textarea name="notes" class="form-control" rows="2">{{ data.notes or '' }}</textarea>
         </div>
     </div>
     <button type="submit" class="btn btn-success w-100 fw-bold">

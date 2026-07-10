@@ -57,22 +57,26 @@ async def loads_page(request: Request, search: str | None = None):
     )
 
 @router.post("/parse-rate-con-html/")
-async def parse_rate_con_html(request: Request, file: UploadFile = File(...)):
+async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(...)):
     db = request.app.state.db
     try:
-        file_bytes = await file.read()
-        mime_type = file.content_type or "application/octet-stream"
+        files_data = []
+        for file in files:
+            file_bytes = await file.read()
+            mime_type = file.content_type or "application/octet-stream"
+            files_data.append((file_bytes, mime_type))
         
-        # Load API keys from DB settings or environment
         api_key = await db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
         
-        # Run Gemini blocking network call inside a thread pool
         parsed_data = await asyncio.to_thread(
-            parse_rate_con_with_ai, file_bytes, mime_type, api_key
+            parse_rate_con_with_ai, files_data, api_key
         )
         
         if not parsed_data:
-            return Response("<div class='alert alert-danger'>AI extraction failed. Please try again.</div>", status_code=400)
+            return Response(
+                "<div class='alert alert-danger'>AI extraction failed. Please verify your API key in settings and try again.</div>", 
+                status_code=400
+            )
             
         return templates.TemplateResponse(
             request=request, 
@@ -82,6 +86,26 @@ async def parse_rate_con_html(request: Request, file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error parsing document: {e}", exc_info=True)
         return Response(f"<div class='alert alert-danger'>Internal Processing Error: {str(e)}</div>", status_code=500)
+
+@router.get("/manual-load-form/", response_class=HTMLResponse)
+async def manual_load_form(request: Request):
+    # Provides structure so templates/partials/load_form.html renders safely with empty values
+    empty_data = {
+        "broker_name": "",
+        "rate_amount": "",
+        "loaded_miles": 0,
+        "load_reference": "",
+        "pickup_location": "",
+        "pickup_date": "",
+        "delivery_location": "",
+        "delivery_date": "",
+        "notes": ""
+    }
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/load_form.html",
+        context={"data": empty_data}
+    )
 
 @router.post("/create-load-web/")
 async def create_load_web(
