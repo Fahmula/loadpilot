@@ -24,16 +24,36 @@ load_dotenv()
 async def dashboard(request: Request):
     db = request.app.state.db
     active_loads = await db.get_loads(limit=5, status=LoadStatus.ACTIVE)
-    delivered = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
-    invoiced = await db.get_loads(limit=10, status=LoadStatus.INVOICED)
+    pending_loads = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
+    history_loads = await db.get_loads(limit=10, status=LoadStatus.INVOICED)
     
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "active_loads": active_loads,
-            "recent_loads": delivered + invoiced
+            "pending_loads": pending_loads,
+            "history_loads": history_loads
         }
+    )
+
+@router.get("/loads", response_class=HTMLResponse)
+async def loads_page(request: Request, search: str | None = None):
+    db = request.app.state.db
+    loads = await db.get_loads(limit=100, search_query=search)
+    
+    # Check if this is an HTMX search request
+    if request.headers.get("HX-Request") == "true":
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/loads_list.html",
+            context={"loads": loads}
+        )
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="loads.html",
+        context={"loads": loads, "search": search or ""}
     )
 
 @router.post("/parse-rate-con-html/")

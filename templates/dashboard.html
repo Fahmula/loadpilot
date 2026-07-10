@@ -14,17 +14,32 @@
     {% for load in active_loads %}
     <div class="card border-primary mb-3 shadow-sm" style="border-width: 2px;">
         <div class="card-body">
-            <div class="d-flex justify-content-between">
-                <span class="badge bg-primary mb-2 text-uppercase">{{ load.status }}</span>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-primary text-uppercase">{{ load.status }}</span>
                 <span class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</span>
             </div>
-            <h5 class="card-title text-truncate">{{ load.pickup_location }} <i class="bi bi-arrow-right"></i> {{ load.delivery_location }}</h5>
-            <p class="card-text text-muted small mb-1">
-                <i class="bi bi-building"></i> {{ load.broker_name }} | Ref: {{ load.load_reference }}
-            </p>
-            <p class="card-text text-muted small mb-3">
-                <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
-            </p>
+            
+            <div style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#notes-{{ load.id }}" aria-expanded="false" aria-controls="notes-{{ load.id }}">
+                <h5 class="card-title text-truncate mb-1">
+                    {{ load.pickup_location }} <i class="bi bi-arrow-right text-muted"></i> {{ load.delivery_location }}
+                </h5>
+                <p class="card-text text-muted small mb-1">
+                    <i class="bi bi-building"></i> {{ load.broker_name }} | Ref: {{ load.load_reference }}
+                </p>
+                <p class="card-text text-muted small mb-2">
+                    <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
+                </p>
+                <p class="text-primary small mb-2"><i class="bi bi-info-circle"></i> Tap card to see details/notes</p>
+            </div>
+
+            <!-- Expandable Notes Section -->
+            <div class="collapse mb-3" id="notes-{{ load.id }}">
+                <div class="bg-light p-2 rounded small border">
+                    <strong>Loaded Miles:</strong> {{ load.loaded_miles }} mi<br>
+                    <strong>Notes:</strong> {{ load.notes or 'No notes provided.' }}
+                </div>
+            </div>
+
             <div class="d-grid">
                 <button hx-post="/update-load-status/{{ load.id }}/Delivered" 
                         hx-confirm="Did you drop this load?"
@@ -44,10 +59,10 @@
     </div>
 {% endif %}
 
-<!-- Recent/Past Loads Section -->
+<!-- Pending Action Section (Delivered, Needs Invoice) -->
 <h6 class="text-muted text-uppercase small fw-bold mt-4">Pending Action</h6>
-{% if recent_loads %}
-    {% for load in recent_loads %}
+{% if pending_loads %}
+    {% for load in pending_loads %}
     <div class="card mb-2 shadow-sm border-0">
         <div class="card-body py-2 px-3">
             <div class="d-flex justify-content-between align-items-center">
@@ -58,25 +73,11 @@
                 <div class="text-end">
                     <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
                     
-                    {% if load.status == 'Delivered' %}
-                        <!-- This ONLY opens the modal to upload the BOL and generate the PDF -->
-                        <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/{{ load.id }}';"
-                                class="btn btn-sm btn-warning mt-1 fw-bold shadow-sm" style="font-size: 0.75rem;" 
-                                data-bs-toggle="modal" data-bs-target="#invoiceModal">
-                            <i class="bi bi-receipt"></i> Invoice Load
-                        </button>
-                        
-                    {% elif load.status == 'Invoiced' %}
-                        <!-- Shows the generated PDF and the button to mark it Invoiced -->
-                        <div class="mt-1">
-                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
-                                <i class="bi bi-file-pdf"></i> PDF
-                            </a>
-                            <span class="badge bg-info text-dark shadow-sm" style="font-size: 0.75rem;">
-                                <i class="bi bi-receipt"></i> Invoiced
-                            </span>
-                        </div>
-                    {% endif %}
+                    <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/{{ load.id }}';"
+                            class="btn btn-sm btn-warning mt-1 fw-bold shadow-sm" style="font-size: 0.75rem;" 
+                            data-bs-toggle="modal" data-bs-target="#invoiceModal">
+                        <i class="bi bi-receipt"></i> Invoice Load
+                    </button>
                 </div>
             </div>
         </div>
@@ -84,6 +85,38 @@
     {% endfor %}
 {% else %}
     <p class="text-muted small">All caught up!</p>
+{% endif %}
+
+<!-- History Section (Last 10 Invoiced Loads) -->
+<h6 class="text-muted text-uppercase small fw-bold mt-4">History (Recent Invoiced)</h6>
+{% if history_loads %}
+    {% for load in history_loads %}
+    <div class="card mb-2 shadow-sm border-0 bg-white">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-bold fs-6">{{ load.delivery_location }}</div>
+                    <div class="text-muted small">{{ load.broker_name }} | Delivered: {{ load.delivery_date }}</div>
+                </div>
+                <div class="text-end">
+                    <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
+                    <div class="mt-1">
+                        {% if load.rate_con_pdf_path %}
+                        <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
+                            <i class="bi bi-file-pdf"></i> PDF
+                        </a>
+                        {% endif %}
+                        <span class="badge bg-success shadow-sm" style="font-size: 0.75rem;">
+                            <i class="bi bi-receipt"></i> Invoiced
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <p class="text-muted small">No invoiced history yet.</p>
 {% endif %}
 
 <!-- Add Load Modal (HTMX Powered) -->
@@ -153,7 +186,7 @@
     </div>
 </div>
 
-<!-- Add this tiny style block so HTMX knows how to hide/show the spinner -->
+<!-- Tiny style block so HTMX knows how to hide/show the spinner -->
 <style>
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: block; }

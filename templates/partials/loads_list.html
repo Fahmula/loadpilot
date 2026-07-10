@@ -1,0 +1,79 @@
+{% if loads %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr class="small text-uppercase text-muted">
+                    <th class="ps-3">Ref / Broker</th>
+                    <th>Route</th>
+                    <th>Dates</th>
+                    <th>Rate</th>
+                    <th class="pe-3">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for load in loads %}
+                <tr style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#row-notes-{{ load.id }}" aria-expanded="false">
+                    <td class="ps-3">
+                        <span class="fw-bold d-block text-dark">{{ load.load_reference }}</span>
+                        <small class="text-muted d-block text-truncate" style="max-width: 120px;">{{ load.broker_name }}</small>
+                    </td>
+                    <td>
+                        <span class="d-block small fw-semibold text-truncate" style="max-width: 150px;">{{ load.pickup_location }}</span>
+                        <span class="text-muted d-block" style="font-size: 0.75rem;"><i class="bi bi-arrow-down-short"></i> {{ load.delivery_location }}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark d-block mb-1 small fw-normal border">{{ load.pickup_date }}</span>
+                        <span class="badge bg-secondary text-white d-block small fw-normal">{{ load.delivery_date }}</span>
+                    </td>
+                    <td>
+                        <span class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</span>
+                        {% if load.loaded_miles %}
+                        <div class="text-muted" style="font-size: 0.7rem;">{{ load.loaded_miles }} mi</div>
+                        {% endif %}
+                    </td>
+                    <td class="pe-3">
+                        {% if load.status == 'Draft' %}
+                            <span class="badge bg-secondary">Draft</span>
+                        {% elif load.status == 'Active' %}
+                            <span class="badge bg-primary">Active</span>
+                        {% elif load.status == 'Delivered' %}
+                            <span class="badge bg-warning text-dark">Delivered</span>
+                        {% elif load.status == 'Invoiced' %}
+                            <span class="badge bg-success">Invoiced</span>
+                            {% if load.rate_con_pdf_path %}
+                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="d-block small text-decoration-none mt-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-file-pdf text-danger"></i> PDF
+                            </a>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                <!-- Inline Expandable Row Notes Section -->
+                <tr class="collapse bg-light" id="row-notes-{{ load.id }}">
+                    <td colspan="5" class="px-4 py-3 small text-muted border-bottom">
+                        <div class="row">
+                            <div class="col-md-6 mb-2 mb-md-0">
+                                <strong>Load Details:</strong>
+                                <ul class="list-unstyled mb-0 mt-1">
+                                    <li><strong>Invoice ID:</strong> {{ load.invoice_number or 'Not invoiced yet' }}</li>
+                                    <li><strong>Broker Email:</strong> {{ load.broker_email or 'N/A' }}</li>
+                                    <li><strong>Total Mileage:</strong> {{ load.loaded_miles }} miles</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Notes:</strong>
+                                <p class="mb-0 mt-1 text-dark bg-white p-2 rounded border">{{ load.notes or 'No notes recorded for this load.' }}</p>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-clipboard-x text-muted fs-2"></i>
+        <p class="text-muted mt-2 mb-0">No matching loads were found.</p>
+    </div>
+{% endif %}

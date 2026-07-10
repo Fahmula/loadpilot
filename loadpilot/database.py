@@ -106,16 +106,33 @@ class DatabaseManager:
                     return self._row_to_load(row)
                 return None
 
-    async def get_loads(self, skip: int = 0, limit: int = 100, status: LoadStatus | None = None) -> list[Load]:
+    async def get_loads(
+        self, 
+        skip: int = 0, 
+        limit: int = 100, 
+        status: LoadStatus | None = None,
+        search_query: str | None = None
+    ) -> list[Load]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
+            conditions = []
+            params = []
+            
             if status:
-                query = "SELECT * FROM loads WHERE status = ? ORDER BY pickup_date DESC LIMIT ? OFFSET ?"
-                params = (status.value, limit, skip)
-            else:
-                query = "SELECT * FROM loads ORDER BY pickup_date DESC LIMIT ? OFFSET ?"
-                params = (limit, skip)
+                conditions.append("status = ?")
+                params.append(status.value)
                 
+            if search_query:
+                conditions.append(
+                    "(broker_name LIKE ? OR load_reference LIKE ? OR invoice_number LIKE ? OR pickup_location LIKE ? OR delivery_location LIKE ?)"
+                )
+                search_param = f"%{search_query}%"
+                params.extend([search_param] * 5)
+                
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"SELECT * FROM loads {where_clause} ORDER BY pickup_date DESC LIMIT ? OFFSET ?"
+            params.extend([limit, skip])
+            
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
                 return [self._row_to_load(row) for row in rows]
