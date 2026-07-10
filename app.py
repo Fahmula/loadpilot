@@ -3,6 +3,7 @@ from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
 from loadpilot.database import DatabaseManager
@@ -73,6 +74,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(api.router)
 app.include_router(ui.router)
+
+@app.get("/manifest.json", include_in_schema=False)
+async def manifest():
+    return FileResponse("static/manifest.json")
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    return FileResponse("static/sw.js")
 
 @app.get("/health")
 def health_check():

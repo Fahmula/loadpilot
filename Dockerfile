@@ -31,6 +31,7 @@ COPY loadpilot /app/loadpilot
 COPY entry.sh /app/entry.sh
 COPY requirements.txt /app/requirements.txt
 COPY templates /app/templates
+COPY static /app/static
 
 RUN mkdir -p /config/logs static/bols static/invoices
 
