@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from loadpilot.auth import (
     DUMMY_PASSWORD_HASH,
@@ -13,7 +13,7 @@ from loadpilot.auth import (
     safe_next_path,
     verify_password,
 )
-from loadpilot.routes.ui import templates
+from loadpilot.templating import alert_response, templates
 
 logger = logging.getLogger("loadpilot.routes.auth")
 router = APIRouter(tags=["Auth"])
@@ -25,11 +25,6 @@ def validate_new_password(password: str, confirm_password: str) -> str | None:
     if password != confirm_password:
         return "Passwords don't match."
     return None
-
-
-def alert(message: str, kind: str = "danger") -> Response:
-    # Messages are fixed strings from this module, never user input
-    return Response(f"<div class='alert alert-{kind} mt-3 mb-0'>{message}</div>")
 
 
 # -----------------------------------------
@@ -131,15 +126,15 @@ async def change_password(
 ):
     user = request.state.user
     if not await asyncio.to_thread(verify_password, current_password, user.password_hash):
-        return alert("Current password is incorrect.")
+        return alert_response("Current password is incorrect.")
 
     error = validate_new_password(new_password, confirm_password)
     if error:
-        return alert(error)
+        return alert_response(error)
 
     password_hash = await asyncio.to_thread(hash_password, new_password)
     await request.app.state.db.set_password_hash(user.id, password_hash)
     # Re-issue this session for the new password; every other device is signed out
     log_in(request, user.model_copy(update={"password_hash": password_hash}))
     logger.info(f"Password changed for '{user.username}'.")
-    return alert("<i class='bi bi-check-circle-fill'></i> Password updated. Other devices were signed out.", "success")
+    return alert_response("Password updated. Other devices were signed out.", "success")

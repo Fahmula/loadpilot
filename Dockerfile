@@ -1,3 +1,15 @@
+# Compile the Tailwind/daisyUI stylesheet. CSS is the same on every platform,
+# so this stage always runs natively on the build machine.
+FROM --platform=$BUILDPLATFORM debian:trixie-slim AS css
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY scripts/build-css.sh scripts/build-css.sh
+COPY assets assets
+COPY templates templates
+COPY loadpilot loadpilot
+RUN scripts/build-css.sh
+
 FROM python:3.14-slim
 
 # Runtime libraries WeasyPrint needs to render invoice PDFs
@@ -20,6 +32,7 @@ COPY loadpilot /app/loadpilot
 COPY entry.sh /app/entry.sh
 COPY templates /app/templates
 COPY static /app/static
+COPY --from=css /src/static/css/app.css /app/static/css/app.css
 
 RUN chmod +x /app/entry.sh
 

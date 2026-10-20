@@ -104,63 +104,37 @@ async def test_migration_moves_invoice_out_of_rate_con_column(tmp_path):
     assert load.rate_con_pdf_path is None
 
 
-async def test_analytics_totals_and_rpm(db):
-    today = date.today()
-    await db.add_load(
-        make_load(rate_amount=3000.0, loaded_miles=1000, delivery_date=today, status=LoadStatus.DELIVERED)
-    )
-    await db.add_load(
-        make_load(
-            broker_name="Blue Freight",
-            rate_amount=1000.0,
-            loaded_miles=500,
-            delivery_date=today,
-            status=LoadStatus.INVOICED,
-        )
-    )
+async def test_add_load_stamps_created_at(db):
+    saved = await db.add_load(make_load())
 
-    analytics = await db.get_analytics_data()
-
-    assert analytics["total_revenue"] == 4000.0
-    assert analytics["total_miles"] == 1500
-    assert analytics["weekly_revenue"] == 4000.0
-    assert analytics["global_rpm"] == pytest.approx(4000 / 1500)
-    assert [b["name"] for b in analytics["brokers"]] == ["Acme Logistics", "Blue Freight"]
-    assert analytics["brokers"][0]["rpm"] == 3.0
+    assert saved.created_at is not None
+    assert (await db.get_load(saved.id)).created_at == saved.created_at
 
 
-async def test_analytics_ignores_loads_not_yet_delivered(db):
-    today = date.today()
-    await db.add_load(make_load(rate_amount=9999.0, status=LoadStatus.DRAFT, delivery_date=today))
-    await db.add_load(make_load(rate_amount=2500.0, status=LoadStatus.ACTIVE, delivery_date=today))
+async def test_get_earned_loads_only_returns_delivered_and_invoiced(db):
+    for status in LoadStatus:
+        await db.add_load(make_load(broker_name=status.value, status=status))
 
-    analytics = await db.get_analytics_data()
+    earned = await db.get_earned_loads()
 
-    assert analytics["total_revenue"] == 0.0
-    assert analytics["weekly_revenue"] == 0.0
-    assert analytics["brokers"] == []
+    assert sorted(load.broker_name for load in earned) == ["Delivered", "Invoiced"]
 
 
-async def test_analytics_buckets_by_actual_delivery_date(db):
-    today = date.today()
-    await db.add_load(
-        make_load(
-            rate_amount=2000.0,
-            status=LoadStatus.DELIVERED,
-            delivery_date=date(today.year - 1, 1, 1),
-            actual_delivery_date=today,
-        )
-    )
+async def test_count_loads_by_status(db):
+    await db.add_load(make_load(status=LoadStatus.ACTIVE))
+    await db.add_load(make_load(status=LoadStatus.ACTIVE))
+    await db.add_load(make_load(status=LoadStatus.INVOICED))
 
-    analytics = await db.get_analytics_data()
+    counts = await db.count_loads_by_status()
 
-    assert analytics["weekly_revenue"] == 2000.0
-    assert analytics["ytd_revenue"] == 2000.0
+    assert counts == {LoadStatus.DRAFT: 0, LoadStatus.ACTIVE: 2, LoadStatus.DELIVERED: 0, LoadStatus.INVOICED: 1}
 
 
-async def test_analytics_with_no_miles_does_not_divide_by_zero(db):
-    await db.add_load(make_load(loaded_miles=0, status=LoadStatus.DELIVERED))
+async def test_get_recent_loads_newest_first(db):
+    first = await db.add_load(make_load(load_reference="first"))
+    second = await db.add_load(make_load(load_reference="second"))
 
-    analytics = await db.get_analytics_data()
+    recent = await db.get_recent_loads(limit=1)
 
-    assert analytics["global_rpm"] == 0.0
+    assert [load.id for load in recent] == [second.id]
+    assert first.id != second.id

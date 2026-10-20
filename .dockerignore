@@ -4,6 +4,9 @@
 venv*
 .env
 config
+.tools
+assets/vendor
+static/css
 tests
 **/__pycache__
 .pytest_cache

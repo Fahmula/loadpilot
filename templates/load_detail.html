@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import status_badge, route, stat, back_header, icon_tile %}
+
+{% block title %}#{{ load.load_reference }} · LoadPilot{% endblock %}
+
+{% block content %}
+{% call back_header("#" ~ load.load_reference, "/loads", load.broker_name) %}{{ status_badge(load.status, "badge-md") }}{% endcall %}
+
+<div class="space-y-4">
+    <!-- Route & pay -->
+    <section class="card-soft p-5">
+        {{ route(load, labels=True) }}
+        <div class="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-base-200/60 p-3 text-sm">
+            <div class="flex items-center gap-2">
+                {{ icon("calendar", "size-4 text-base-content/50") }}
+                <div><div class="text-xs text-base-content/60">Pickup</div><div class="font-semibold">{{ load.pickup_date | short_date }}</div></div>
+            </div>
+            <div class="flex items-center gap-2">
+                {{ icon("calendar", "size-4 text-base-content/50") }}
+                <div>
+                    {% if load.actual_delivery_date %}
+                    <div class="text-xs text-base-content/60">Delivered</div><div class="font-semibold text-success">{{ load.actual_delivery_date | short_date }}</div>
+                    {% else %}
+                    <div class="text-xs text-base-content/60">Delivery</div><div class="font-semibold">{{ load.delivery_date | short_date }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="mt-4 grid grid-cols-3 gap-3 border-t border-base-300/70 pt-4">
+            {{ stat("Rate", load.rate_amount | money, "text-success") }}
+            {{ stat("Loaded Miles", load.loaded_miles | miles) }}
+            {{ stat("RPM", rpm(load.rate_amount, load.loaded_miles)) }}
+        </div>
+    </section>
+
+    <!-- Next step for this load -->
+    {% if load.status == "Active" %}
+    <section class="card-soft p-5">
+        <div class="flex items-center gap-3">
+            {{ icon_tile("package-check", "success") }}
+            <div class="min-w-0 flex-1">
+                <h2 class="font-bold">Dropped this load?</h2>
+                <p class="text-sm text-base-content/60">Mark it delivered to unlock invoicing.</p>
+            </div>
+        </div>
+        <button class="btn btn-success btn-lg mt-4 w-full rounded-xl" hx-post="/update-load-status/{{ load.id }}/Delivered" hx-confirm="Mark this load as delivered today?">
+            {{ icon("check", "size-5") }} Mark Delivered
+        </button>
+    </section>
+
+    {% elif load.status == "Delivered" %}
+    <section id="invoice" class="card-soft scroll-mt-6 p-5">
+        <div class="mb-4 flex items-center gap-3">
+            {{ icon_tile("receipt", "warning") }}
+            <div>
+                <h2 class="font-bold">Generate Invoice</h2>
+                <p class="text-sm text-base-content/60">Upload the signed BOL and LoadPilot builds the PDF invoice.</p>
+            </div>
+        </div>
+        <form method="post" action="/generate-invoice/{{ load.id }}" enctype="multipart/form-data" data-loading-form>
+            <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-base-300 bg-base-200/50 px-4 py-8 text-center transition hover:border-primary hover:bg-primary/5" data-file-drop>
+                <span class="grid size-12 place-items-center rounded-full bg-primary/12 text-primary">{{ icon("camera", "size-6") }}</span>
+                <span class="font-semibold" data-file-label>Take a photo or choose the BOL</span>
+                <span class="text-xs text-base-content/60">Photo or PDF</span>
+                <input type="file" name="bol_file" accept="image/*,application/pdf" class="sr-only" required>
+            </label>
+            <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl">
+                <span class="loading loading-spinner hidden" data-loading></span>
+                {{ icon("receipt", "size-5") }} Generate Invoice
+            </button>
+        </form>
+    </section>
+
+    {% elif load.status == "Invoiced" %}
+    <section class="card-soft p-5">
+        <div class="flex items-center gap-3">
+            {{ icon_tile("file-check", "info") }}
+            <div class="min-w-0 flex-1">
+                <h2 class="font-bold">Invoice {{ load.invoice_number }}</h2>
+                <p class="text-sm text-base-content/60">
+                    {% if load.invoiced_at %}Generated {{ load.invoiced_at | short_date }}{% else %}Invoice generated{% endif %}
+                    · {{ load.rate_amount | money }}
+                </p>
+            </div>
+        </div>
+        {% if load.invoice_pdf_path %}
+        <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-primary mt-4 w-full rounded-xl">
+            {{ icon("external-link", "size-5") }} Open Invoice PDF
+        </a>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <!-- Broker -->
+    <section class="card-soft divide-y divide-base-300/70">
+        <div class="flex items-center gap-3 p-4">
+            {{ icon_tile("building-2", "secondary") }}
+            <div class="min-w-0 flex-1">
+                <div class="text-xs text-base-content/60">Broker</div>
+                <div class="truncate font-semibold">{{ load.broker_name }}</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 p-4">
+            {{ icon_tile("hash", "neutral") }}
+            <div class="min-w-0 flex-1">
+                <div class="text-xs text-base-content/60">Load Reference</div>
+                <div class="truncate font-semibold">{{ load.load_reference }}</div>
+            </div>
+        </div>
+        {% if load.broker_email %}
+        <a href="mailto:{{ load.broker_email }}" class="flex items-center gap-3 p-4 transition hover:bg-base-200/40">
+            {{ icon_tile("mail", "neutral") }}
+            <div class="min-w-0 flex-1">
+                <div class="text-xs text-base-content/60">Email</div>
+                <div class="truncate font-semibold text-primary">{{ load.broker_email }}</div>
+            </div>
+        </a>
+        {% endif %}
+    </section>
+
+    <!-- Notes (pickup numbers, instructions) -->
+    <section class="card-soft p-5">
+        <h2 class="mb-2 flex items-center gap-2 font-bold">{{ icon("sticky-note", "size-5 text-warning") }} Notes</h2>
+        {% if load.notes %}
+        <p class="whitespace-pre-line text-sm leading-relaxed text-base-content/80">{{ load.notes }}</p>
+        {% else %}
+        <p class="text-sm text-base-content/50">No notes for this load.</p>
+        {% endif %}
+    </section>
+
+    <!-- Documents -->
+    {% if load.bol_pdf_path or load.invoice_pdf_path %}
+    <section class="card-soft divide-y divide-base-300/70">
+        <h2 class="px-5 pb-2 pt-4 font-bold">Documents</h2>
+        {% for label, path, icon_name in [("Signed BOL", load.bol_pdf_path, "file"), ("Invoice PDF", load.invoice_pdf_path, "file-text")] if path %}
+        <a href="/{{ path }}" target="_blank" class="flex items-center gap-3 px-5 py-3 transition hover:bg-base-200/40">
+            {{ icon_tile(icon_name, "neutral", "size-9") }}
+            <span class="flex-1 font-medium">{{ label }}</span>
+            {{ icon("external-link", "size-4 text-base-content/40") }}
+        </a>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    <button class="btn btn-ghost btn-sm w-full text-error" hx-post="/delete-load-web/{{ load.id }}"
+            hx-confirm="Permanently delete load #{{ load.load_reference }}? This can't be undone.">
+        {{ icon("trash-2", "size-4") }} Delete Load
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Show the chosen file's name in the drop zone, and a spinner while the invoice is built
+    document.querySelectorAll("[data-file-drop]").forEach(function (zone) {
+        var input = zone.querySelector("input[type=file]");
+        input.addEventListener("change", function () {
+            if (input.files.length) zone.querySelector("[data-file-label]").textContent = input.files[0].name;
+        });
+    });
+    document.querySelectorAll("[data-loading-form]").forEach(function (form) {
+        form.addEventListener("submit", function () {
+            var button = form.querySelector("button[type=submit]");
+            button.disabled = true;
+            button.querySelector("[data-loading]").classList.remove("hidden");
+        });
+    });
+</script>
+{% endblock %}

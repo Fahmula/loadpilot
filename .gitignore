@@ -150,3 +150,8 @@ output.txt
 *.strm
 *.db
 *.mkv
+# Build tooling and output (see scripts/build-css.sh)
+.tools/
+assets/vendor/
+static/css/
+uv.lock

@@ -1,5 +1,4 @@
 import asyncio
-import html
 import logging
 import os
 import shutil
@@ -10,46 +9,81 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from fastapi.templating import Jinja2Templates
 from weasyprint import HTML
 
+from loadpilot.analytics import build_analytics, recent_activity
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.models import Load, LoadStatus
 from loadpilot.services import parse_rate_con_with_ai
+from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
 logger = logging.getLogger("loadpilot.routes.ui")
 router = APIRouter(tags=["UI Views"])
-templates = Jinja2Templates(directory=Path(__file__).resolve().parents[2] / "templates")
 
 load_dotenv()
+
+
+async def get_gemini_api_key(db) -> str:
+    return await db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
+
+
+async def get_load_or_404(db, load_id: int) -> Load:
+    load = await db.get_load(load_id)
+    if not load:
+        raise HTTPException(status_code=404, detail="Load not found")
+    return load
 
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     db = request.app.state.db
-    active_loads = await db.get_loads(limit=5, status=LoadStatus.ACTIVE)
-    pending_loads = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
-    history_loads = await db.get_loads(limit=10, status=LoadStatus.INVOICED)
+    # The current load is the active one picked up soonest; others are booked ahead
+    active_loads = sorted(await db.get_loads(status=LoadStatus.ACTIVE), key=lambda load: load.pickup_date)
+    needs_invoice = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
+    activity = recent_activity(await db.get_recent_loads(limit=30))
 
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"active_loads": active_loads, "pending_loads": pending_loads, "history_loads": history_loads},
+        context={
+            "current_load": active_loads[0] if active_loads else None,
+            "more_active": max(len(active_loads) - 1, 0),
+            "needs_invoice": needs_invoice,
+            "activity": activity,
+        },
     )
 
 
 @router.get("/loads", response_class=HTMLResponse)
-async def loads_page(request: Request, search: str | None = None):
+async def loads_page(request: Request, search: str | None = None, status: LoadStatus | None = None):
     db = request.app.state.db
-    loads = await db.get_loads(limit=100, search_query=search)
+    loads = await db.get_loads(limit=100, status=status, search_query=search)
+    counts = await db.count_loads_by_status()
 
-    # Check if this is an HTMX search request
+    # Drafts only get a tab once there are some
+    tabs = [(None, "All", sum(counts.values()))] + [
+        (tab_status, STATUS_STYLES[tab_status][1], count)
+        for tab_status, count in counts.items()
+        if count or tab_status != LoadStatus.DRAFT
+    ]
+    context = {"loads": loads, "search": search or "", "status": status, "tabs": tabs}
+
+    # HTMX tab/search requests only need the tabs + list
     if request.headers.get("HX-Request") == "true":
-        return templates.TemplateResponse(request=request, name="partials/loads_list.html", context={"loads": loads})
+        return templates.TemplateResponse(request=request, name="partials/loads_results.html", context=context)
+    return templates.TemplateResponse(request=request, name="loads.html", context=context)
 
-    return templates.TemplateResponse(
-        request=request, name="loads.html", context={"loads": loads, "search": search or ""}
-    )
+
+@router.get("/loads/new", response_class=HTMLResponse)
+async def new_load_page(request: Request):
+    has_ai_key = bool(await get_gemini_api_key(request.app.state.db))
+    return templates.TemplateResponse(request=request, name="load_new.html", context={"has_ai_key": has_ai_key})
+
+
+@router.get("/loads/{load_id}", response_class=HTMLResponse)
+async def load_detail_page(request: Request, load_id: int):
+    load = await get_load_or_404(request.app.state.db, load_id)
+    return templates.TemplateResponse(request=request, name="load_detail.html", context={"load": load})
 
 
 @router.post("/parse-rate-con-html/")
@@ -62,15 +96,13 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
             mime_type = file.content_type or "application/octet-stream"
             files_data.append((file_bytes, mime_type))
 
-        api_key = await db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
+        api_key = await get_gemini_api_key(db)
 
         parsed_data = await asyncio.to_thread(parse_rate_con_with_ai, files_data, api_key)
 
         if not parsed_data:
-            return Response(
-                "<div class='alert alert-danger'>"
-                "AI extraction failed. Please verify your API key in settings and try again.</div>",
-                status_code=400,
+            return alert_response(
+                "AI extraction failed. Check your API key in Settings, or enter the load manually.", status_code=400
             )
 
         return templates.TemplateResponse(
@@ -78,10 +110,7 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
         )
     except Exception as e:
         logger.error(f"Error parsing document: {e}", exc_info=True)
-        return Response(
-            f"<div class='alert alert-danger'>Internal Processing Error: {html.escape(str(e))}</div>",
-            status_code=500,
-        )
+        return alert_response(f"Internal processing error: {e}", status_code=500)
 
 
 @router.get("/manual-load-form/", response_class=HTMLResponse)
@@ -134,8 +163,8 @@ async def create_load_web(
         status=LoadStatus.ACTIVE,
     )
 
-    await db.add_load(load)
-    return Response(headers={"HX-Refresh": "true"})
+    load = await db.add_load(load)
+    return Response(headers={"HX-Redirect": f"/loads/{load.id}"})
 
 
 @router.post("/update-load-status/{load_id}/{new_status}")
@@ -157,54 +186,10 @@ async def update_load_status(request: Request, load_id: int, new_status: str):
     return Response(headers={"HX-Refresh": "true"})
 
 
-@router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
-    db = request.app.state.db
-    settings = await db.get_all_settings()
-    return templates.TemplateResponse(request=request, name="settings.html", context={"settings": settings})
-
-
-@router.post("/settings/save")
-async def save_settings(
-    request: Request,
-    company_name: str = Form(""),
-    street_address: str = Form(""),
-    city_state_zip: str = Form(""),
-    show_address_on_invoice: bool = Form(False),
-    bank_name: str = Form(""),
-    account_number: str = Form(""),
-    routing_number: str = Form(""),
-    show_bank_on_invoice: bool = Form(False),
-    gemini_api_key: str = Form(""),
-):
-    db = request.app.state.db
-
-    await db.save_setting("company_name", company_name)
-    await db.save_setting("street_address", street_address)
-    await db.save_setting("city_state_zip", city_state_zip)
-    await db.save_setting("show_address_on_invoice", "true" if show_address_on_invoice else "false")
-    await db.save_setting("bank_name", bank_name)
-    await db.save_setting("account_number", account_number)
-    await db.save_setting("routing_number", routing_number)
-    await db.save_setting("show_bank_on_invoice", "true" if show_bank_on_invoice else "false")
-
-    if gemini_api_key.strip():
-        await db.save_setting("gemini_api_key", gemini_api_key)
-
-    return Response("""
-        <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
-            <i class="bi bi-check-circle-fill"></i> Settings saved successfully!
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    """)
-
-
 @router.post("/generate-invoice/{load_id}")
 async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile = File(...)):
     db = request.app.state.db
-    load = await db.get_load(load_id)
-    if not load:
-        raise HTTPException(status_code=404, detail="Load not found")
+    load = await get_load_or_404(db, load_id)
     settings = await db.get_all_settings()
 
     # Keep only the base name so a crafted filename can't escape the BOL directory
@@ -241,16 +226,17 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
             "invoice_number": invoice_num,
             "bol_pdf_path": bol_web_path,
             "invoice_pdf_path": invoice_web_path,
+            "invoiced_at": datetime.now().replace(microsecond=0),
         },
     )
 
-    return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
 
 
 @router.get("/analytics", response_class=HTMLResponse)
-async def analytics_page(request: Request):
-    db = request.app.state.db
-    analytics = await db.get_analytics_data()
+async def analytics_page(request: Request, period: str = "month"):
+    loads = await request.app.state.db.get_earned_loads()
+    analytics = build_analytics(loads, period)
     return templates.TemplateResponse(request=request, name="analytics.html", context={"analytics": analytics})
 
 
@@ -258,4 +244,4 @@ async def analytics_page(request: Request):
 async def delete_load_web(request: Request, load_id: int):
     db = request.app.state.db
     await db.delete_load(load_id)
-    return Response(headers={"HX-Refresh": "true"})
+    return Response(headers={"HX-Redirect": "/loads"})
