@@ -34,6 +34,12 @@ MIGRATIONS: list[list[str]] = [
         "ALTER TABLE loads ADD COLUMN created_at TEXT",
         "ALTER TABLE loads ADD COLUMN invoiced_at TEXT",
     ],
+    # 4: AI settings per provider; keep an existing Gemini key on the model it was already using
+    [
+        "UPDATE settings SET key = 'ai_api_key_gemini' WHERE key = 'gemini_api_key'",
+        "INSERT OR IGNORE INTO settings (key, value) SELECT 'ai_model_gemini', 'gemini-3.1-flash-lite' "
+        "WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'ai_api_key_gemini')",
+    ],
 ]
 
 

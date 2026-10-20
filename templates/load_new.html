@@ -17,10 +17,10 @@
             </div>
         </div>
 
-        {% if not has_ai_key %}
+        {% if not ai.api_key %}
         <div role="alert" class="alert alert-soft alert-warning mb-4 text-sm">
             {{ icon("circle-alert", "size-5") }}
-            <span>Add your Gemini API key in <a href="/settings" class="link font-semibold">Settings</a> to scan rate cons.</span>
+            <span>Add your {{ ai.provider.label }} API key in <a href="/settings" class="link font-semibold">Settings</a> to scan rate cons.</span>
         </div>
         {% endif %}
 
@@ -31,7 +31,7 @@
             <input type="file" name="files" accept="application/pdf,image/*" multiple required class="sr-only">
         </label>
 
-        <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl" {% if not has_ai_key %}disabled{% endif %}>
+        <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl" {% if not ai.api_key %}disabled{% endif %}>
             {{ icon("sparkles", "size-5") }} Extract with AI
         </button>
 

@@ -138,3 +138,23 @@ async def test_get_recent_loads_newest_first(db):
 
     assert [load.id for load in recent] == [second.id]
     assert first.id != second.id
+
+
+async def test_migration_moves_gemini_key_to_provider_settings(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        await conn.execute("INSERT INTO settings VALUES ('gemini_api_key', 'AIzaOldKey')")
+        await conn.commit()
+
+    manager = DatabaseManager(db_path=str(db_path))
+    await manager.init_db()
+    settings = await manager.get_all_settings()
+
+    assert "gemini_api_key" not in settings
+    assert settings["ai_api_key_gemini"] == "AIzaOldKey"
+    assert settings["ai_model_gemini"] == "gemini-3.1-flash-lite"
+
+
+async def test_fresh_database_has_no_ai_model_preset(db):
+    assert await db.get_all_settings() == {}

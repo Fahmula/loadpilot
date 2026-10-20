@@ -28,9 +28,53 @@
             <label class="floating-label"><span>City, State ZIP</span>
                 <input type="text" name="city_state_zip" class="input w-full" placeholder="City, State ZIP" value="{{ settings.city_state_zip or '' }}"></label>
         {% elif section == "ai" %}
-            <label class="floating-label"><span>Gemini API key</span>
-                <input type="password" name="gemini_api_key" class="input w-full" placeholder="Paste a new Gemini API key" autocomplete="off" required></label>
-            <p class="text-xs text-base-content/60">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="link">Google AI Studio</a>. It's stored on your server and never shown again.</p>
+            {% set p = ai.provider %}
+            <div>
+                <div class="mb-1.5 text-xs font-medium text-base-content/60">Provider</div>
+                <div class="grid grid-cols-3 gap-1 rounded-xl bg-base-200 p-1">
+                    {% for key, option in providers.items() %}
+                    <label class="btn btn-sm h-10 rounded-lg border-0 shadow-none {{ 'bg-base-100 shadow-sm' if key == p.key else 'bg-transparent font-medium text-base-content/70' }}">
+                        <input type="radio" name="provider" value="{{ key }}" class="sr-only" {% if key == p.key %}checked{% endif %}
+                               hx-get="/settings/section/ai?edit=true&provider={{ key }}" hx-target="{{ target }}" hx-swap="outerHTML" hx-trigger="change">
+                        {{ option.label | replace("Google ", "") }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <label class="floating-label"><span>{{ p.label }} API key</span>
+                <input id="ai-api-key" type="password" name="api_key" class="input w-full" autocomplete="off"
+                       placeholder="{% if ai.key_source == 'saved' %}Saved {{ ai.api_key | last4 }}. Paste a new key to replace{% elif ai.key_source == 'env' %}Using {{ p.env_var }}. Paste a key to override{% else %}Paste your {{ p.label }} API key{% endif %}"></label>
+            <p class="-mt-1 text-xs text-base-content/60">Get a key at <a href="{{ p.key_url }}" target="_blank" rel="noopener" class="link">{{ p.key_url | replace("https://", "") }}</a>. It's stored on your server and never shown again.</p>
+
+            <div id="ai-models" hx-post="/settings/ai/models" hx-trigger="{{ 'load, ' if ai.api_key }}change from:#ai-api-key">
+                <input type="hidden" name="model" value="{{ ai.model }}">
+                {% if ai.api_key %}
+                <div class="flex items-center gap-2 text-sm text-base-content/60"><span class="loading loading-spinner loading-sm"></span> Loading models...</div>
+                {% else %}
+                <p class="text-sm text-base-content/60">Enter an API key to load the available models.</p>
+                {% endif %}
+            </div>
+
+            <details class="group rounded-xl border border-base-300/70">
+                <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium">
+                    {{ icon("settings", "size-4 text-base-content/60") }}
+                    <span class="flex-1">Advanced</span>
+                    {{ icon("chevron-down", "size-4 text-base-content/40 transition group-open:rotate-180") }}
+                </summary>
+                <div class="space-y-3 px-4 pb-4">
+                    <label class="block">
+                        <span class="mb-1.5 block text-xs font-medium text-base-content/60">Extra instructions for the AI</span>
+                        <textarea name="extra_instructions" rows="4" class="textarea w-full"
+                                  placeholder="e.g. Pickup numbers are usually labeled 'Shipper Ref'. Put appointment times in the notes.">{{ ai.extra_instructions }}</textarea>
+                    </label>
+                    <p class="text-xs text-base-content/60">Added to the end of the built-in prompt. Leave blank for normal use; the answer format can't be changed, so this can't break saving loads.</p>
+                    <details>
+                        <summary class="cursor-pointer text-xs font-medium text-primary">View built-in prompt</summary>
+                        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-base-200 p-3 text-xs leading-relaxed">{{ builtin_prompt }}</pre>
+                    </details>
+                </div>
+            </details>
         {% elif section == "bank" %}
             <label class="floating-label"><span>Bank name</span>
                 <input type="text" name="bank_name" class="input w-full" placeholder="Bank name" value="{{ settings.bank_name or '' }}"></label>
@@ -63,14 +107,19 @@
             </label>
 
         {% elif section == "ai" %}
-            <div class="text-xs text-base-content/60">Gemini API Key</div>
-            {% if settings.gemini_api_key %}
-            <div class="mt-1 flex items-center gap-2 font-mono text-sm">{{ icon("lock", "size-4 text-success") }} {{ settings.gemini_api_key | last4 }}</div>
-            {% elif env_ai_key %}
-            <div class="mt-1 flex items-center gap-2 text-sm">{{ icon("lock", "size-4 text-success") }} Using GEMINI_API_KEY from the server environment</div>
+            <div class="grid grid-cols-2 gap-3">
+                <div><div class="text-xs text-base-content/60">Provider</div><div class="font-semibold">{{ ai.provider.label }}</div></div>
+                <div class="min-w-0"><div class="text-xs text-base-content/60">Model</div><div class="truncate font-mono text-sm">{{ ai.model or "Automatic" }}</div></div>
+            </div>
+            <div class="mt-3 text-xs text-base-content/60">API Key</div>
+            {% if ai.key_source == "saved" %}
+            <div class="mt-1 flex items-center gap-2 font-mono text-sm">{{ icon("lock", "size-4 text-success") }} {{ ai.api_key | last4 }}</div>
+            {% elif ai.key_source == "env" %}
+            <div class="mt-1 flex items-center gap-2 text-sm">{{ icon("lock", "size-4 text-success") }} Using {{ ai.provider.env_var }} from the server environment</div>
             {% else %}
             <div class="mt-1 flex items-center gap-2 text-sm font-medium text-warning">{{ icon("circle-alert", "size-4") }} Not set. Rate con scanning is off.</div>
             {% endif %}
+            {% if ai.extra_instructions %}<span class="badge badge-soft badge-secondary badge-sm mt-3">Custom instructions on</span>{% endif %}
             <p class="mt-3 text-xs text-base-content/50">Used to automatically read rate confirmations.</p>
 
         {% elif section == "bank" %}
