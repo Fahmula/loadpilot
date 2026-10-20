@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import shutil
 import uuid
 from datetime import date, datetime
@@ -11,20 +10,16 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from weasyprint import HTML
 
+from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
 from loadpilot.analytics import build_analytics, recent_activity
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.models import Load, LoadStatus
-from loadpilot.services import parse_rate_con_with_ai
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
 logger = logging.getLogger("loadpilot.routes.ui")
 router = APIRouter(tags=["UI Views"])
 
 load_dotenv()
-
-
-async def get_gemini_api_key(db) -> str:
-    return await db.get_setting("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
 
 
 async def get_load_or_404(db, load_id: int) -> Load:
@@ -76,8 +71,8 @@ async def loads_page(request: Request, search: str | None = None, status: LoadSt
 
 @router.get("/loads/new", response_class=HTMLResponse)
 async def new_load_page(request: Request):
-    has_ai_key = bool(await get_gemini_api_key(request.app.state.db))
-    return templates.TemplateResponse(request=request, name="load_new.html", context={"has_ai_key": has_ai_key})
+    ai = await load_ai_config(request.app.state.db)
+    return templates.TemplateResponse(request=request, name="load_new.html", context={"ai": ai})
 
 
 @router.get("/loads/{load_id}", response_class=HTMLResponse)
@@ -88,29 +83,23 @@ async def load_detail_page(request: Request, load_id: int):
 
 @router.post("/parse-rate-con-html/")
 async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(...)):
-    db = request.app.state.db
+    ai = await load_ai_config(request.app.state.db)
     try:
-        files_data = []
-        for file in files:
-            file_bytes = await file.read()
-            mime_type = file.content_type or "application/octet-stream"
-            files_data.append((file_bytes, mime_type))
+        pages = [(await file.read(), file.content_type or "application/octet-stream", file.filename) for file in files]
 
-        api_key = await get_gemini_api_key(db)
+        # No model chosen yet (e.g. key only set by environment variable): use the suggested one
+        model = ai.model
+        if not model and ai.api_key:
+            model = suggest_model(ai.provider, await asyncio.to_thread(list_models, ai.provider, ai.api_key)) or ""
 
-        parsed_data = await asyncio.to_thread(parse_rate_con_with_ai, files_data, api_key)
-
-        if not parsed_data:
-            return alert_response(
-                "AI extraction failed. Check your API key in Settings, or enter the load manually.", status_code=400
-            )
-
-        return templates.TemplateResponse(
-            request=request, name="partials/load_form.html", context={"data": parsed_data}
-        )
+        parsed_data = await asyncio.to_thread(extract_rate_con, ai, model, pages)
+    except AIError as e:
+        return alert_response(str(e), status_code=400)
     except Exception as e:
         logger.error(f"Error parsing document: {e}", exc_info=True)
         return alert_response(f"Internal processing error: {e}", status_code=500)
+
+    return templates.TemplateResponse(request=request, name="partials/load_form.html", context={"data": parsed_data})
 
 
 @router.get("/manual-load-form/", response_class=HTMLResponse)

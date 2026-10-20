@@ -1,9 +1,11 @@
 import asyncio
 from datetime import date
 
+from loadpilot.ai import AIError, Model
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.database import DatabaseManager
 from loadpilot.models import LoadStatus
+from loadpilot.routes import settings as settings_routes
 from loadpilot.routes import ui
 
 from .conftest import make_load
@@ -139,31 +141,58 @@ def test_generate_invoice(client, db_path):
     assert client.get("/" + invoiced["invoice_pdf_path"]).status_code == 200
 
 
+def configure_ai(client, provider="gemini", api_key="test-key-1234", model="test-model"):
+    client.post("/settings/section/ai", data={"provider": provider, "api_key": api_key, "model": model})
+
+
 def test_parse_rate_con_prefills_form(client, monkeypatch):
+    configure_ai(client)
     extracted = {**LOAD_FORM, "rate_amount": 2500.0, "loaded_miles": 1000}
-    monkeypatch.setattr(ui, "parse_rate_con_with_ai", lambda files, key: extracted)
+    calls = []
+    monkeypatch.setattr(ui, "extract_rate_con", lambda ai, model, pages: calls.append((ai, model, pages)) or extracted)
 
     response = client.post("/parse-rate-con-html/", files={"files": ("ratecon.png", b"img", "image/png")})
 
     assert response.status_code == 200
     assert 'value="dispatch@acme.example"' in response.text
     assert "PU# 5521" in response.text
+    ai, model, pages = calls[0]
+    assert (ai.provider.key, ai.api_key, model) == ("gemini", "test-key-1234", "test-model")
+    assert pages == [(b"img", "image/png", "ratecon.png")]
+
+
+def test_parse_rate_con_uses_suggested_model_when_none_chosen(client, monkeypatch):
+    configure_ai(client, model="")
+    monkeypatch.setattr(ui, "list_models", lambda provider, key: [Model("gemini-9-flash", "Gemini 9 Flash")])
+    models_used = []
+    monkeypatch.setattr(ui, "extract_rate_con", lambda ai, model, pages: models_used.append(model) or LOAD_FORM)
+
+    client.post("/parse-rate-con-html/", files={"files": ("ratecon.png", b"img", "image/png")})
+
+    assert models_used == ["gemini-9-flash"]
 
 
 def test_parse_rate_con_failure_shows_error(client, monkeypatch):
-    monkeypatch.setattr(ui, "parse_rate_con_with_ai", lambda files, key: None)
+    configure_ai(client)
+
+    def fail(ai, model, pages):
+        raise AIError("Google Gemini rejected the API key. Check it in Settings.")
+
+    monkeypatch.setattr(ui, "extract_rate_con", fail)
 
     response = client.post("/parse-rate-con-html/", files={"files": ("ratecon.png", b"img", "image/png")})
 
     assert response.status_code == 400
-    assert "AI extraction failed" in response.text
+    assert "rejected the API key" in response.text
 
 
 def test_parse_rate_con_error_is_html_escaped(client, monkeypatch):
-    def explode(files, key):
+    configure_ai(client)
+
+    def explode(ai, model, pages):
         raise RuntimeError("<script>alert(1)</script>")
 
-    monkeypatch.setattr(ui, "parse_rate_con_with_ai", explode)
+    monkeypatch.setattr(ui, "extract_rate_con", explode)
 
     response = client.post("/parse-rate-con-html/", files={"files": ("ratecon.png", b"img", "image/png")})
 
@@ -236,7 +265,9 @@ def test_dashboard_lists_loads_ready_to_invoice_and_activity(client, db_path):
 def test_new_load_page_warns_without_api_key(client, monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-    assert "Add your Gemini API key" in client.get("/loads/new").text
+    assert "Add your Google Gemini API key" in client.get("/loads/new").text
+    configure_ai(client)
+    assert "Add your Google Gemini API key" not in client.get("/loads/new").text
 
 
 def test_analytics_period_picker(client, db_path):
@@ -266,7 +297,7 @@ def test_settings_section_edit_and_save(client):
 
 def test_settings_masks_secrets(client):
     client.post("/settings/section/bank", data={"bank_name": "Sikorsky CU", "account_number": "9876541234"})
-    client.post("/settings/section/ai", data={"gemini_api_key": "AIzaSecretKeyAbcd"})
+    configure_ai(client, api_key="AIzaSecretKeyAbcd")
 
     body = client.get("/settings").text
 
@@ -275,11 +306,11 @@ def test_settings_masks_secrets(client):
 
 
 def test_blank_api_key_keeps_existing_key(client, db_path):
-    client.post("/settings/section/ai", data={"gemini_api_key": "AIzaSecretKeyAbcd"})
-    client.post("/settings/section/ai", data={"gemini_api_key": "  "})
+    configure_ai(client, api_key="AIzaSecretKeyAbcd")
+    configure_ai(client, api_key="  ")
 
     db = DatabaseManager(db_path=str(db_path))
-    assert asyncio.run(db.get_setting("gemini_api_key")) == "AIzaSecretKeyAbcd"
+    assert asyncio.run(db.get_setting("ai_api_key_gemini")) == "AIzaSecretKeyAbcd"
 
 
 def test_settings_toggles(client, db_path):
@@ -294,3 +325,91 @@ def test_settings_toggles(client, db_path):
 
 def test_unknown_settings_section_is_rejected(client):
     assert client.get("/settings/section/password").status_code == 422
+
+
+# -----------------------------------------
+# AI provider settings
+# -----------------------------------------
+def test_each_provider_keeps_its_own_key_and_model(client, db_path):
+    configure_ai(client, "gemini", "gemini-key-1111", "gemini-9-flash")
+    configure_ai(client, "openrouter", "or-key-2222", "google/gemini-9-flash")
+
+    body = client.get("/settings").text
+    assert "OpenRouter" in body and "google/gemini-9-flash" in body and "•••• 2222" in body
+
+    db = DatabaseManager(db_path=str(db_path))
+    settings = asyncio.run(db.get_all_settings())
+    assert settings["ai_provider"] == "openrouter"
+    assert settings["ai_api_key_gemini"] == "gemini-key-1111"
+    assert settings["ai_model_gemini"] == "gemini-9-flash"
+
+
+def test_switching_provider_in_edit_mode(client):
+    configure_ai(client, "gemini", "gemini-key-1111")
+
+    body = client.get("/settings/section/ai?edit=true&provider=openai").text
+
+    assert "OpenAI API key" in body
+    assert "Paste your OpenAI API key" in body
+    assert "platform.openai.com/api-keys" in body
+
+
+def test_env_key_is_used_when_nothing_saved(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-9999")
+
+    body = client.get("/settings/section/ai?edit=true&provider=openai").text
+
+    assert "Using OPENAI_API_KEY" in body
+    assert "sk-env-9999" not in body
+
+
+def test_unknown_provider_is_rejected(client):
+    assert client.post("/settings/section/ai", data={"provider": "skynet"}).status_code == 422
+    assert client.post("/settings/ai/models", data={"provider": "skynet"}).status_code == 422
+
+
+def test_model_picker_suggests_a_default(client, monkeypatch):
+    seen_keys = []
+    models = [Model("gemini-8-flash", "8"), Model("gemini-9-flash", "9"), Model("gemini-9-pro", "pro")]
+    monkeypatch.setattr(settings_routes, "list_models", lambda provider, key: seen_keys.append(key) or models)
+
+    body = client.post("/settings/ai/models", data={"provider": "gemini", "api_key": "typed-key"}).text
+
+    assert seen_keys == ["typed-key"]
+    assert 'label="Recommended"' in body
+    assert '<option value="gemini-9-flash" selected>' in body
+    assert "3 available" in body
+
+
+def test_model_picker_keeps_saved_model_selected(client, monkeypatch):
+    configure_ai(client, model="gemini-8-flash")
+    models = [Model("gemini-8-flash", "8"), Model("gemini-9-flash", "9")]
+    monkeypatch.setattr(settings_routes, "list_models", lambda provider, key: models)
+
+    body = client.post("/settings/ai/models", data={"provider": "gemini"}).text
+
+    assert '<option value="gemini-8-flash" selected>' in body
+
+
+def test_model_picker_error_falls_back_to_typing_a_model(client, monkeypatch):
+    configure_ai(client, model="my-model")
+
+    def fail(provider, key):
+        raise AIError("Google Gemini rejected the API key. Check it in Settings.")
+
+    monkeypatch.setattr(settings_routes, "list_models", fail)
+
+    body = client.post("/settings/ai/models", data={"provider": "gemini"}).text
+
+    assert "rejected the API key" in body
+    assert 'name="model"' in body and 'value="my-model"' in body
+
+
+def test_extra_instructions_are_saved(client):
+    client.post(
+        "/settings/section/ai",
+        data={"provider": "gemini", "extra_instructions": "Pickup numbers are labeled Shipper Ref."},
+    )
+
+    assert "Custom instructions on" in client.get("/settings").text
+    assert "Pickup numbers are labeled Shipper Ref." in client.get("/settings/section/ai?edit=true").text

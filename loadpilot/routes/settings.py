@@ -1,64 +1,97 @@
-import os
+import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
+from loadpilot.ai import PROVIDERS, AIError, build_prompt, list_models, load_ai_config, suggest_model
 from loadpilot.templating import templates
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
 Section = Literal["company", "ai", "bank"]
 
-# Which settings keys each card edits
+# Which settings keys the simple cards edit (the AI card has its own handler)
 SECTION_FIELDS = {
     "company": ("company_name", "street_address", "city_state_zip"),
-    "ai": ("gemini_api_key",),
     "bank": ("bank_name", "account_number", "routing_number"),
 }
 TOGGLES = frozenset({"show_address_on_invoice", "show_bank_on_invoice"})
 
 
-async def render_section(request: Request, section: str, editing: bool) -> HTMLResponse:
-    settings = await request.app.state.db.get_all_settings()
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/settings_section.html",
-        context={
-            "section": section,
-            "settings": settings,
-            "editing": editing,
-            "env_ai_key": bool(os.getenv("GEMINI_API_KEY")),
-        },
-    )
+async def section_context(request: Request, section: str, editing: bool, provider: str | None = None) -> dict:
+    db = request.app.state.db
+    return {
+        "section": section,
+        "settings": await db.get_all_settings(),
+        "editing": editing,
+        "ai": await load_ai_config(db, provider),
+        "providers": PROVIDERS,
+        "builtin_prompt": build_prompt(),
+    }
+
+
+async def render_section(request: Request, section: str, editing: bool, provider: str | None = None):
+    context = await section_context(request, section, editing, provider)
+    return templates.TemplateResponse(request=request, name="partials/settings_section.html", context=context)
 
 
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    settings = await request.app.state.db.get_all_settings()
-    return templates.TemplateResponse(
-        request=request,
-        name="settings.html",
-        context={"settings": settings, "env_ai_key": bool(os.getenv("GEMINI_API_KEY"))},
-    )
+    context = await section_context(request, "company", editing=False)
+    return templates.TemplateResponse(request=request, name="settings.html", context=context)
 
 
 @router.get("/section/{section}", response_class=HTMLResponse)
-async def settings_section(request: Request, section: Section, edit: bool = False):
-    return await render_section(request, section, editing=edit)
+async def settings_section(request: Request, section: Section, edit: bool = False, provider: str | None = None):
+    return await render_section(request, section, editing=edit, provider=provider)
+
+
+@router.post("/section/ai", response_class=HTMLResponse)
+async def save_ai_settings(
+    request: Request,
+    provider: str = Form(...),
+    api_key: str = Form(""),
+    model: str = Form(""),
+    extra_instructions: str = Form(""),
+):
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=422, detail="Unknown AI provider")
+    db = request.app.state.db
+    await db.save_setting("ai_provider", provider)
+    # A blank key field means "keep the current key", since a saved key is never shown again
+    if api_key.strip():
+        await db.save_setting(f"ai_api_key_{provider}", api_key.strip())
+    await db.save_setting(f"ai_model_{provider}", model.strip())
+    await db.save_setting("ai_extra_instructions", extra_instructions.strip())
+    return await render_section(request, "ai", editing=False)
 
 
 @router.post("/section/{section}", response_class=HTMLResponse)
-async def save_settings_section(request: Request, section: Section):
+async def save_settings_section(request: Request, section: Literal["company", "bank"]):
     db = request.app.state.db
     form = await request.form()
     for key in SECTION_FIELDS[section]:
-        value = str(form.get(key, "")).strip()
-        # A blank API key field means "keep the current key", since the saved key is never shown
-        if key == "gemini_api_key" and not value:
-            continue
-        await db.save_setting(key, value)
+        await db.save_setting(key, str(form.get(key, "")).strip())
     return await render_section(request, section, editing=False)
+
+
+@router.post("/ai/models", response_class=HTMLResponse)
+async def ai_models(request: Request, provider: str = Form(...), api_key: str = Form("")):
+    """Model picker for the AI card, loaded live with the typed key or the saved one."""
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=422, detail="Unknown AI provider")
+    ai = await load_ai_config(request.app.state.db, provider)
+    context = {"ai": ai, "models": [], "suggested": None, "selected": ai.model, "error": None}
+    try:
+        models = await asyncio.to_thread(list_models, ai.provider, api_key.strip() or ai.api_key)
+        context["models"] = models
+        context["suggested"] = suggest_model(ai.provider, models)
+        if ai.model not in {m.id for m in models}:
+            context["selected"] = context["suggested"]
+    except AIError as e:
+        context["error"] = str(e)
+    return templates.TemplateResponse(request=request, name="partials/ai_models.html", context=context)
 
 
 @router.post("/toggle/{key}")

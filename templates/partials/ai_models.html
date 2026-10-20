@@ -1,0 +1,30 @@
+{# Model picker for the AI settings card; swapped into #ai-models #}
+{% if error %}
+<div role="alert" class="alert alert-soft alert-error mb-3 text-sm">{{ icon("circle-alert", "size-5") }}<span>{{ error }}</span></div>
+<label class="floating-label"><span>Model ID</span>
+    <input type="text" name="model" class="input w-full font-mono text-sm" placeholder="Model ID (type it in)" value="{{ selected or '' }}"></label>
+{% elif models %}
+<label class="block">
+    <span class="mb-1.5 flex items-center justify-between text-xs font-medium text-base-content/60">
+        <span>Model</span><span>{{ models | length }} available</span>
+    </span>
+    <select name="model" class="select w-full font-mono text-sm">
+        {% if suggested %}
+        <optgroup label="Recommended">
+            <option value="{{ suggested }}" {% if selected == suggested %}selected{% endif %}>{{ suggested }}</option>
+        </optgroup>
+        {% endif %}
+        {% for group, group_models in models | groupby("group") %}
+        <optgroup label="{{ group }}">
+            {% for model in group_models if model.id != suggested %}
+            <option value="{{ model.id }}" {% if selected == model.id %}selected{% endif %}>{{ model.id }}</option>
+            {% endfor %}
+        </optgroup>
+        {% endfor %}
+    </select>
+</label>
+<p class="mt-1.5 text-xs text-base-content/60">Speech, embedding and image-generation models are hidden.</p>
+{% else %}
+<p class="text-sm text-base-content/60">{{ ai.provider.label }} didn't return any models that can read documents.</p>
+<input type="hidden" name="model" value="{{ selected or '' }}">
+{% endif %}
