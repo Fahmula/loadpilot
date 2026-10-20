@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import date
 
 from loadpilot.ai import AIError, Model
@@ -413,3 +414,15 @@ def test_extra_instructions_are_saved(client):
 
     assert "Custom instructions on" in client.get("/settings").text
     assert "Pickup numbers are labeled Shipper Ref." in client.get("/settings/section/ai?edit=true").text
+
+
+def test_model_picker_only_replaces_itself(client):
+    """The picker sits inside the card's form; without its own hx-target it inherits the form's
+    and the model list replaces the whole card (provider, key and Advanced disappear)."""
+    configure_ai(client)
+
+    body = client.get("/settings/section/ai?edit=true").text
+
+    picker = re.search(r'<div id="ai-models"[^>]*>', body).group(0)
+    assert 'hx-target="this"' in picker
+    assert 'hx-swap="innerHTML"' in picker
