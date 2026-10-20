@@ -71,4 +71,39 @@
         <i class="bi bi-save"></i> Save Settings
     </button>
 </form>
+
+<!-- Account Card -->
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-body">
+        <h6 class="card-title text-primary fw-bold mb-3">
+            <i class="bi bi-person-lock"></i> Account
+            <span class="text-muted fw-normal small ms-1">{{ request.state.user.username }}</span>
+        </h6>
+        <form hx-post="/settings/password" hx-target="#password-result" hx-on::after-request="if (event.detail.successful) this.reset()">
+            <div class="mb-2">
+                <label class="form-label small text-muted">Current Password</label>
+                <input type="password" name="current_password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label small text-muted">New Password</label>
+                    <input type="password" name="new_password" class="form-control" autocomplete="new-password" minlength="8" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label small text-muted">Confirm</label>
+                    <input type="password" name="confirm_password" class="form-control" autocomplete="new-password" minlength="8" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-outline-primary w-100 fw-bold">
+                <i class="bi bi-key"></i> Change Password
+            </button>
+            <div id="password-result"></div>
+        </form>
+        <form method="post" action="/logout" class="mt-3">
+            <button type="submit" class="btn btn-outline-danger w-100 fw-bold">
+                <i class="bi bi-box-arrow-right"></i> Log Out
+            </button>
+        </form>
+    </div>
+</div>
 {% endblock %}
