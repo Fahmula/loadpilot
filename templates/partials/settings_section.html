@@ -47,7 +47,9 @@
                        placeholder="{% if ai.key_source == 'saved' %}Saved {{ ai.api_key | last4 }}. Paste a new key to replace{% elif ai.key_source == 'env' %}Using {{ p.env_var }}. Paste a key to override{% else %}Paste your {{ p.label }} API key{% endif %}"></label>
             <p class="-mt-1 text-xs text-base-content/60">Get a key at <a href="{{ p.key_url }}" target="_blank" rel="noopener" class="link">{{ p.key_url | replace("https://", "") }}</a>. It's stored on your server and never shown again.</p>
 
-            <div id="ai-models" hx-post="/settings/ai/models" hx-trigger="{{ 'load, ' if ai.api_key }}change from:#ai-api-key">
+            {# Explicit target/swap: otherwise this inherits the form's hx-target and replaces the whole card #}
+            <div id="ai-models" hx-post="/settings/ai/models" hx-trigger="{{ 'load, ' if ai.api_key }}change from:#ai-api-key"
+                 hx-target="this" hx-swap="innerHTML">
                 <input type="hidden" name="model" value="{{ ai.model }}">
                 {% if ai.api_key %}
                 <div class="flex items-center gap-2 text-sm text-base-content/60"><span class="loading loading-spinner loading-sm"></span> Loading models...</div>
