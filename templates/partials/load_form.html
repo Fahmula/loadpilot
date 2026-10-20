@@ -1,48 +1,90 @@
-<!-- This is returned by FastAPI and injected into the page by HTMX -->
-<form hx-post="/create-load-web/" hx-swap="none" id="saveLoadForm">
-    <div class="row g-2 mb-3">
-        <div class="col-12">
-            <label class="small text-muted">Broker Name</label>
-            <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name or '' }}" required>
-        </div>
-        <div class="col-12">
-            <label class="small text-muted">Broker Email</label>
-            <input type="email" name="broker_email" class="form-control" value="{{ data.broker_email or '' }}">
-        </div>
-        <div class="col-3">
-            <label class="small text-muted">Rate ($)</label>
-            <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount or '' }}" required>
-        </div>
-        <div class="col-3">
-            <label class="small text-muted">Loaded Mi</label>
-            <input type="number" name="loaded_miles" class="form-control" value="{{ data.loaded_miles if data.loaded_miles is not none else 0 }}" required>
-        </div>
-        <div class="col-3">
-            <label class="small text-muted">Load Ref #</label>
-            <input type="text" name="load_reference" class="form-control" value="{{ data.load_reference or '' }}" required>
-        </div>
-        <div class="col-6">
-            <label class="small text-muted">Pickup Loc: City, State</label>
-            <input type="text" name="pickup_location" class="form-control" value="{{ data.pickup_location or '' }}" required>
-        </div>
-        <div class="col-6">
-            <label class="small text-muted">Pickup Date</label>
-            <input type="date" name="pickup_date" class="form-control" value="{{ data.pickup_date or '' }}" required>
-        </div>
-        <div class="col-6">
-            <label class="small text-muted">Delivery Loc: City, State</label>
-            <input type="text" name="delivery_location" class="form-control" value="{{ data.delivery_location or '' }}" required>
-        </div>
-        <div class="col-6">
-            <label class="small text-muted">Delivery Date</label>
-            <input type="date" name="delivery_date" class="form-control" value="{{ data.delivery_date or '' }}" required>
-        </div>
-        <div class="col-12">
-            <label class="small text-muted">Notes</label>
-            <textarea name="notes" class="form-control" rows="2">{{ data.notes or '' }}</textarea>
+{# Review form for a new load, prefilled by AI extraction (or blank for manual entry). #}
+<form id="new-load-form" hx-post="/create-load-web/" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
+    <div class="mb-5 flex items-center gap-3">
+        <span class="grid size-10 place-items-center rounded-xl bg-success/12 text-success">{{ icon("circle-check", "size-5") }}</span>
+        <div>
+            <h2 class="font-bold">{{ "Review Details" if data.broker_name else "Load Details" }}</h2>
+            <p class="text-sm text-base-content/60">{{ "Check what the AI found, then save." if data.broker_name else "Fill in the rate con details." }}</p>
         </div>
     </div>
-    <button type="submit" class="btn btn-success w-100 fw-bold">
-        <i class="bi bi-check-circle"></i> Confirm & Save Load
+
+    <fieldset class="fieldset gap-3">
+        <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Broker</legend>
+        <label class="floating-label">
+            <span>Broker name</span>
+            <input type="text" name="broker_name" class="input w-full" placeholder="Broker name" value="{{ data.broker_name or '' }}" required>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+            <label class="floating-label">
+                <span>Load ref #</span>
+                <input type="text" name="load_reference" class="input w-full" placeholder="Load ref #" value="{{ data.load_reference or '' }}" required>
+            </label>
+            <label class="floating-label">
+                <span>Broker email</span>
+                <input type="email" name="broker_email" class="input w-full" placeholder="Broker email" value="{{ data.broker_email or '' }}">
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset class="fieldset mt-2 gap-3">
+        <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Route</legend>
+        <div class="grid grid-cols-[1fr_auto] gap-3">
+            <label class="floating-label">
+                <span>Pickup (City, ST)</span>
+                <input type="text" name="pickup_location" class="input w-full" placeholder="Pickup (City, ST)" value="{{ data.pickup_location or '' }}" required>
+            </label>
+            <label class="floating-label">
+                <span>Pickup date</span>
+                <input type="date" name="pickup_date" class="input w-40" value="{{ data.pickup_date or '' }}" required>
+            </label>
+            <label class="floating-label">
+                <span>Delivery (City, ST)</span>
+                <input type="text" name="delivery_location" class="input w-full" placeholder="Delivery (City, ST)" value="{{ data.delivery_location or '' }}" required>
+            </label>
+            <label class="floating-label">
+                <span>Delivery date</span>
+                <input type="date" name="delivery_date" class="input w-40" value="{{ data.delivery_date or '' }}" required>
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset class="fieldset mt-2 gap-3">
+        <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Pay</legend>
+        <div class="grid grid-cols-2 gap-3">
+            <label class="input w-full">
+                {{ icon("dollar-sign", "size-4 text-base-content/50") }}
+                <input type="number" step="0.01" min="0" name="rate_amount" placeholder="Rate" value="{{ data.rate_amount or '' }}" required data-rpm-rate>
+            </label>
+            <label class="input w-full">
+                <input type="number" min="0" name="loaded_miles" placeholder="Loaded miles" value="{{ data.loaded_miles if data.loaded_miles is not none else 0 }}" required data-rpm-miles>
+                <span class="text-sm text-base-content/50">mi</span>
+            </label>
+        </div>
+        <p class="text-sm text-base-content/60">Rate per mile: <span class="font-semibold text-base-content" data-rpm-output>—</span></p>
+    </fieldset>
+
+    <fieldset class="fieldset mt-2">
+        <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Notes</legend>
+        <textarea name="notes" class="textarea w-full" rows="3" placeholder="Pickup numbers, appointment times, instructions...">{{ data.notes or '' }}</textarea>
+    </fieldset>
+
+    <button type="submit" class="btn btn-success btn-lg mt-5 w-full rounded-xl">
+        {{ icon("check", "size-5") }} Save Load
     </button>
 </form>
+
+<script>
+    // Live rate-per-mile while editing the pay fields
+    (function () {
+        var form = document.getElementById("new-load-form");
+        var rate = form.querySelector("[data-rpm-rate]"), miles = form.querySelector("[data-rpm-miles]");
+        var output = form.querySelector("[data-rpm-output]");
+        function update() {
+            var r = parseFloat(rate.value), m = parseFloat(miles.value);
+            output.textContent = r > 0 && m > 0 ? "$" + (r / m).toFixed(2) + "/mi" : "—";
+        }
+        rate.addEventListener("input", update);
+        miles.addEventListener("input", update);
+        update();
+    })();
+</script>

@@ -1,0 +1,111 @@
+/* Tailwind CSS + daisyUI entry point. Build with scripts/build-css.sh. */
+@import "tailwindcss" source(none);
+@source "../templates";
+@source "../loadpilot";
+
+@plugin "./vendor/daisyui.mjs" {
+  themes: false;
+}
+
+@plugin "./vendor/daisyui-theme.mjs" {
+  name: "loadpilot";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f3f6fb;
+  --color-base-300: #e4e9f2;
+  --color-base-content: #0f172a;
+  --color-primary: #1f6bff;
+  --color-primary-content: #ffffff;
+  --color-secondary: #7c3aed;
+  --color-secondary-content: #ffffff;
+  --color-accent: #0ea5e9;
+  --color-accent-content: #ffffff;
+  --color-neutral: #0b1a3a;
+  --color-neutral-content: #e8eefc;
+  --color-info: #2563eb;
+  --color-info-content: #ffffff;
+  --color-success: #16a34a;
+  --color-success-content: #ffffff;
+  --color-warning: #f59e0b;
+  --color-warning-content: #1f1300;
+  --color-error: #dc2626;
+  --color-error-content: #ffffff;
+  --radius-selector: 2rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "./vendor/daisyui-theme.mjs" {
+  name: "loadpilot-dark";
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: #111a2e;
+  --color-base-200: #0a1122;
+  --color-base-300: #1f2a44;
+  --color-base-content: #e5ebf7;
+  --color-primary: #3b82ff;
+  --color-primary-content: #ffffff;
+  --color-secondary: #a78bfa;
+  --color-secondary-content: #140a2e;
+  --color-accent: #38bdf8;
+  --color-accent-content: #04202e;
+  --color-neutral: #050b1a;
+  --color-neutral-content: #e8eefc;
+  --color-info: #60a5fa;
+  --color-info-content: #04122b;
+  --color-success: #22c55e;
+  --color-success-content: #03200d;
+  --color-warning: #fbbf24;
+  --color-warning-content: #241800;
+  --color-error: #f87171;
+  --color-error-content: #2b0606;
+  --radius-selector: 2rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer components {
+  /* Navy header used by the dashboard hero, analytics and the sign-in pages (same in both themes) */
+  .hero-navy {
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgb(59 130 255 / 0.45) 0%, transparent 55%),
+      radial-gradient(80% 60% at 0% 100%, rgb(14 165 233 / 0.18) 0%, transparent 60%),
+      linear-gradient(160deg, #0b1a3a 0%, #0f2a5f 55%, #143a85 100%);
+    color: #f1f5ff;
+  }
+
+  .card-soft {
+    @apply rounded-box border border-base-300/70 bg-base-100 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_8px_24px_-12px_rgb(15_23_42/0.12)];
+  }
+
+  .section-title {
+    @apply text-lg font-bold tracking-tight;
+  }
+}
+
+/* Spinner and dimming while an HTMX request is in flight */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: flex;
+}
+.htmx-request .hide-while-loading {
+  display: none;
+}

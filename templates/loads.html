@@ -1,44 +1,22 @@
 {% extends "base.html" %}
 
+{% block title %}Loads · LoadPilot{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="h4 mb-0 fw-bold">All Loads</h2>
-</div>
+<header class="mb-5 flex items-center justify-between gap-3">
+    <h1 class="text-3xl font-bold tracking-tight">Loads</h1>
+    <a href="/loads/new" class="btn btn-primary rounded-xl shadow-md shadow-primary/25">{{ icon("plus", "size-5") }} Add Load</a>
+</header>
 
-<!-- Search Input Form Card -->
-<div class="card shadow-sm border-0 mb-3">
-    <div class="card-body p-2">
-        <div class="input-group">
-            <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
-            <input type="text" 
-                   name="search" 
-                   class="form-control border-0 shadow-none text-dark" 
-                   placeholder="Search by Broker, Ref, Location..."
-                   value="{{ search }}"
-                   hx-get="/loads" 
-                   hx-trigger="keyup changed delay:300ms" 
-                   hx-target="#loads-list-wrapper"
-                   hx-indicator="#search-spinner">
-        </div>
-    </div>
-</div>
+<label class="input input-lg mb-4 w-full rounded-2xl border-base-300/70 bg-base-100 text-base shadow-sm">
+    {{ icon("search", "size-5 text-base-content/50") }}
+    <input type="search" name="search" value="{{ search }}" placeholder="Search by broker, reference, location..."
+           hx-get="/loads" hx-trigger="input changed delay:300ms, search" hx-target="#loads-results"
+           hx-include="#status-filter" hx-push-url="true" hx-indicator="#search-spinner" autocomplete="off">
+    <span id="search-spinner" class="htmx-indicator loading loading-spinner loading-sm text-primary"></span>
+</label>
 
-<!-- Inline Loading Indicator -->
-<div id="search-spinner" class="htmx-indicator text-center my-3">
-    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-    <span class="ms-2 text-muted small">Searching database...</span>
+<div id="loads-results">
+    {% include "partials/loads_results.html" %}
 </div>
-
-<!-- Loads List Container -->
-<div class="card shadow-sm border-0">
-    <div class="card-body p-0" id="loads-list-wrapper">
-        {% include "partials/loads_list.html" %}
-    </div>
-</div>
-
-<style>
-    .htmx-indicator { display: none; }
-    .htmx-request .htmx-indicator { display: block; }
-    .htmx-request.htmx-indicator { display: block; }
-</style>
 {% endblock %}

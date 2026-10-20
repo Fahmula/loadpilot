@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{# Shared shell for the signed-out pages (login, first-run setup) #}
+
+{% block main_top %}pt-0{% endblock %}
+{% block nav %}{% endblock %}
+
+{% block content %}
+<section class="hero-navy relative -mx-4 overflow-hidden rounded-b-[2rem] px-6 pb-24 pt-[calc(env(safe-area-inset-top)+3rem)] text-center sm:mx-0 sm:mt-6 sm:rounded-[2rem]">
+    <div class="pointer-events-none absolute -bottom-8 -right-8 text-white/10" aria-hidden="true">{{ icon("truck", "size-56") }}</div>
+    <img src="/static/icon-192.png" alt="" class="relative mx-auto size-16 rounded-2xl shadow-xl shadow-black/30">
+    <h1 class="relative mt-4 text-3xl font-extrabold tracking-tight">{% block heading %}{% endblock %}</h1>
+    <p class="relative mt-1 text-white/70">{% block subheading %}{% endblock %}</p>
+</section>
+
+<div class="relative mx-auto -mt-14 max-w-md">
+    <div class="card-soft p-6 shadow-xl">
+        {% if error %}
+        <div role="alert" class="alert alert-soft alert-error mb-4 text-sm">{{ icon("circle-alert", "size-5") }}<span>{{ error }}</span></div>
+        {% endif %}
+        {% block form %}{% endblock %}
+    </div>
+</div>
+{% endblock %}

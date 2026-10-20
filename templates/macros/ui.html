@@ -1,0 +1,82 @@
+{# Shared building blocks for every page. Import with: {% from "macros/ui.html" import ... %} #}
+
+{% macro nav_item(href, label, icon_name, active) -%}
+<a href="{{ href }}" class="{{ 'dock-active text-primary' if active else 'text-base-content/60' }}" {% if active %}aria-current="page"{% endif %}>
+    {{ icon(icon_name, "size-6") }}
+    <span class="dock-label text-xs font-medium">{{ label }}</span>
+</a>
+{%- endmacro %}
+
+{% macro status_badge(status, size="badge-sm") -%}
+{% set style, label = status_styles[status] %}
+<span class="badge badge-soft {{ style }} {{ size }} gap-1 font-semibold whitespace-nowrap">
+    <span class="size-1.5 rounded-full bg-current"></span>{{ label }}
+</span>
+{%- endmacro %}
+
+{# Pickup → delivery with coloured pins, as in "Midland, TX ··→ Smiley, TX" #}
+{% macro route(load, labels=False, size="text-base") -%}
+<div class="flex items-center gap-2 {{ size }}">
+    <div class="flex min-w-0 flex-1 items-start gap-1.5">
+        {{ icon("map-pin", "mt-0.5 size-5 shrink-0 text-primary") }}
+        <div class="min-w-0">
+            <div class="truncate font-semibold">{{ load.pickup_location }}</div>
+            {% if labels %}<div class="text-xs text-base-content/60">Pickup</div>{% endif %}
+        </div>
+    </div>
+    <div class="flex shrink-0 items-center text-base-content/40" aria-hidden="true">
+        <span class="w-5 border-t-2 border-dotted border-current sm:w-8"></span>
+        {{ icon("chevron-right", "-ml-1 size-4") }}
+    </div>
+    <div class="flex min-w-0 flex-1 items-start gap-1.5">
+        {{ icon("map-pin", "mt-0.5 size-5 shrink-0 text-success") }}
+        <div class="min-w-0">
+            <div class="truncate font-semibold">{{ load.delivery_location }}</div>
+            {% if labels %}<div class="text-xs text-base-content/60">Delivery</div>{% endif %}
+        </div>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro stat(label, value, value_class="") -%}
+<div class="min-w-0">
+    <div class="text-xs text-base-content/60">{{ label }}</div>
+    <div class="truncate text-lg font-bold tracking-tight {{ value_class }}">{{ value }}</div>
+</div>
+{%- endmacro %}
+
+{# Sub-page header with a back button, e.g. Load details / Add load #}
+{% macro back_header(title, back_href, subtitle=None) -%}
+<header class="mb-5 flex items-center gap-3">
+    <a href="{{ back_href }}" class="btn btn-circle btn-ghost btn-sm -ml-1" aria-label="Back">{{ icon("chevron-left", "size-6") }}</a>
+    <div class="min-w-0 flex-1">
+        <h1 class="truncate text-2xl font-bold tracking-tight">{{ title }}</h1>
+        {% if subtitle %}<p class="truncate text-sm text-base-content/60">{{ subtitle }}</p>{% endif %}
+    </div>
+    {{ caller() if caller }}
+</header>
+{%- endmacro %}
+
+{% macro empty_state(icon_name, title, message) -%}
+<div class="card-soft flex flex-col items-center px-6 py-10 text-center">
+    <div class="mb-3 grid size-12 place-items-center rounded-full bg-base-200 text-base-content/50">{{ icon(icon_name, "size-6") }}</div>
+    <p class="font-semibold">{{ title }}</p>
+    <p class="mt-1 text-sm text-base-content/60">{{ message }}</p>
+    {{ caller() if caller }}
+</div>
+{%- endmacro %}
+
+{# Round tinted icon used in lists (activity, settings rows) #}
+{# Class names are spelled out in full so Tailwind can find them when scanning templates #}
+{% set tile_tones = {
+    "primary": "bg-primary/12 text-primary",
+    "success": "bg-success/12 text-success",
+    "warning": "bg-warning/15 text-warning",
+    "info": "bg-info/12 text-info",
+    "secondary": "bg-secondary/12 text-secondary",
+    "error": "bg-error/12 text-error",
+    "neutral": "bg-base-200 text-base-content/70",
+} %}
+{% macro icon_tile(icon_name, tone="primary", size="size-10") -%}
+<div class="grid {{ size }} shrink-0 place-items-center rounded-xl {{ tile_tones[tone] }}">{{ icon(icon_name, "size-5") }}</div>
+{%- endmacro %}

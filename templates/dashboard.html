@@ -1,213 +1,134 @@
 {% extends "base.html" %}
+{% from "macros/ui.html" import status_badge, route, stat, empty_state, icon_tile %}
+
+{% block main_top %}pt-0{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="h4 mb-0 fw-bold">Dashboard</h2>
-    <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#addLoadModal">
-        <i class="bi bi-plus-lg"></i> Add Load
-    </button>
+<!-- Hero -->
+<section class="hero-navy relative -mx-4 overflow-hidden rounded-b-[2rem] px-5 pb-20 pt-[calc(env(safe-area-inset-top)+1.25rem)] sm:mx-0 sm:mt-4 sm:rounded-[2rem]">
+    <div class="pointer-events-none absolute -bottom-6 -right-6 text-white/10" aria-hidden="true">{{ icon("truck", "size-56") }}</div>
+    <div class="relative flex items-center gap-2.5">
+        <img src="/static/icon-192.png" alt="" class="size-9 rounded-xl shadow-lg shadow-black/20">
+        <span class="text-2xl font-bold tracking-tight">LoadPilot</span>
+    </div>
+    <div class="relative mt-8">
+        <p class="text-base text-white/80" id="greeting">Welcome back,</p>
+        <h1 class="text-4xl font-extrabold tracking-tight">{{ request.state.user.username }}</h1>
+        <p class="mt-1 text-white/70">Keep rolling forward.</p>
+    </div>
+</section>
+
+<div class="relative -mt-14 space-y-6">
+    <a href="/loads/new" class="btn btn-primary btn-lg h-14 w-full rounded-2xl text-base shadow-lg shadow-primary/30">
+        {{ icon("file-text", "size-5") }} Add Load
+    </a>
+
+    <!-- Current load -->
+    {% if current_load %}
+    <section class="card-soft p-5">
+        <div class="mb-4 flex items-center justify-between">
+            <h2 class="section-title">Current Load</h2>
+            {{ status_badge(current_load.status) }}
+        </div>
+        {{ route(current_load, labels=True) }}
+        <div class="mt-4 grid grid-cols-2 divide-x divide-base-300 rounded-xl bg-base-200/60 py-3 text-sm">
+            <div class="flex items-center gap-2 px-3">
+                {{ icon("calendar", "size-4 text-base-content/50") }}
+                <div><div class="text-xs text-base-content/60">Pickup</div><div class="font-semibold">{{ current_load.pickup_date | short_date }}</div></div>
+            </div>
+            <div class="flex items-center gap-2 px-3">
+                {{ icon("calendar", "size-4 text-base-content/50") }}
+                <div><div class="text-xs text-base-content/60">Delivery</div><div class="font-semibold">{{ current_load.delivery_date | short_date }}</div></div>
+            </div>
+        </div>
+        <div class="mt-4 grid grid-cols-3 gap-3 border-t border-base-300/70 pt-4">
+            {{ stat("Rate", current_load.rate_amount | money, "text-success") }}
+            {{ stat("Loaded Miles", current_load.loaded_miles | miles) }}
+            {{ stat("RPM", rpm(current_load.rate_amount, current_load.loaded_miles)) }}
+        </div>
+        <a href="/loads/{{ current_load.id }}" class="btn btn-soft btn-primary mt-5 w-full rounded-xl">
+            View Load Details {{ icon("chevron-right", "size-4") }}
+        </a>
+        {% if more_active %}
+        <a href="/loads?status=Active" class="mt-3 block text-center text-sm font-medium text-primary">
+            +{{ more_active }} more active load{{ "s" if more_active > 1 }}
+        </a>
+        {% endif %}
+    </section>
+    {% else %}
+        {% call empty_state("truck", "No active load", "Tap Add Load when you sign a rate con.") %}{% endcall %}
+    {% endif %}
+
+    <!-- Delivered loads waiting on a BOL + invoice -->
+    {% if needs_invoice %}
+    <section>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="section-title">Ready to Invoice</h2>
+            <span class="badge badge-soft badge-warning badge-sm font-semibold">{{ needs_invoice | length }}</span>
+        </div>
+        <div class="card-soft divide-y divide-base-300/70">
+            {% for load in needs_invoice %}
+            <a href="/loads/{{ load.id }}#invoice" class="flex items-center gap-3 p-4 transition hover:bg-base-200/50">
+                {{ icon_tile("receipt", "warning") }}
+                <div class="min-w-0 flex-1">
+                    <div class="truncate font-semibold">{{ load.delivery_location }}</div>
+                    <div class="truncate text-sm text-base-content/60">{{ load.broker_name }}</div>
+                </div>
+                <div class="text-right">
+                    <div class="font-bold text-success">{{ load.rate_amount | money }}</div>
+                    <div class="text-xs font-medium text-primary">Upload BOL</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Recent activity -->
+    <section>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="section-title">Recent Activity</h2>
+            <a href="/loads" class="text-sm font-medium text-primary">See All</a>
+        </div>
+        {% if activity %}
+        <div class="space-y-3">
+            {% set kinds = {
+                "invoiced": ("Invoice Generated", "receipt", "info"),
+                "delivered": ("Load Delivered", "circle-check", "success"),
+                "added": ("Load Added", "plus", "primary"),
+            } %}
+            {% for event in activity %}
+            {% set title, icon_name, tone = kinds[event.kind] %}
+            <a href="/loads/{{ event.load.id }}" class="card-soft flex items-start gap-3 p-4 transition hover:bg-base-200/40">
+                {{ icon_tile(icon_name, tone) }}
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-baseline justify-between gap-2">
+                        <span class="font-semibold">{{ title }}</span>
+                        <span class="shrink-0 text-xs text-base-content/50">{{ event.at | short_date(False) }}</span>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-2 text-sm">
+                        <span class="truncate text-base-content/70">{{ event.load.pickup_location }} → {{ event.load.delivery_location }}</span>
+                        {% if event.kind == "invoiced" %}<span class="shrink-0 font-semibold text-success">{{ event.load.rate_amount | money }}</span>{% endif %}
+                    </div>
+                    <div class="truncate text-xs text-base-content/50">{{ event.load.broker_name }}</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+            {% call empty_state("clock", "Nothing yet", "Loads you add, deliver and invoice show up here.") %}{% endcall %}
+        {% endif %}
+    </section>
 </div>
+{% endblock %}
 
-<!-- Active Load Section -->
-<h6 class="text-muted text-uppercase small fw-bold mt-4">Current Load</h6>
-{% if active_loads %}
-    {% for load in active_loads %}
-    <div class="card border-primary mb-3 shadow-sm" style="border-width: 2px;">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="badge bg-primary text-uppercase">{{ load.status }}</span>
-                <span class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</span>
-            </div>
-            
-            <div style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#notes-{{ load.id }}" aria-expanded="false" aria-controls="notes-{{ load.id }}">
-                <h5 class="card-title text-truncate mb-1">
-                    {{ load.pickup_location }} <i class="bi bi-arrow-right text-muted"></i> {{ load.delivery_location }}
-                </h5>
-                <p class="card-text text-muted small mb-1">
-                    <i class="bi bi-building"></i> {{ load.broker_name }} | Ref: {{ load.load_reference }}
-                </p>
-                <p class="card-text text-muted small mb-2">
-                    <i class="bi bi-calendar-event"></i> Drops: {{ load.delivery_date }}
-                </p>
-                <p class="text-primary small mb-2"><i class="bi bi-info-circle"></i> Tap to see details/notes</p>
-            </div>
-
-            <!-- Expandable Notes Section -->
-            <div class="collapse mb-3" id="notes-{{ load.id }}">
-                <div class="bg-light p-2 rounded small border">
-                    <strong>Loaded Miles:</strong> {{ load.loaded_miles }} mi<br>
-                    <strong>Notes:</strong> {{ load.notes or 'No notes provided.' }}
-                </div>
-                <div class="text-end">
-                    <button hx-post="/delete-load-web/{{ load.id }}"
-                            hx-confirm="Are you sure you want to cancel/delete this load?"
-                            class="btn btn-link text-danger btn-sm p-0 text-decoration-none fw-bold">
-                        <i class="bi bi-trash-fill"></i> Cancel / Delete Load
-                    </button>
-                </div>
-            </div>
-
-            <div class="d-grid">
-                <button hx-post="/update-load-status/{{ load.id }}/Delivered" 
-                        hx-confirm="Did you drop this load?"
-                        class="btn btn-outline-primary btn-sm fw-bold">
-                    <i class="bi bi-box-seam"></i> Mark Delivered
-                </button>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-{% else %}
-    <div class="card mb-3 bg-light border-dashed text-center py-4">
-        <div class="card-body text-muted">
-            <p class="mb-0">No active load right now.</p>
-            <small>Tap 'Add Load' when you sign a rate con.</small>
-        </div>
-    </div>
-{% endif %}
-
-<!-- Pending Action Section (Delivered, Needs Invoice) -->
-<h6 class="text-muted text-uppercase small fw-bold mt-4">Pending Action</h6>
-{% if pending_loads %}
-    {% for load in pending_loads %}
-    <div class="card mb-2 shadow-sm border-0">
-        <div class="card-body py-2 px-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="fw-bold fs-6">{{ load.delivery_location }}</div>
-                    <div class="text-muted small">{{ load.broker_name }}</div>
-                </div>
-                <div class="text-end">
-                    <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
-                    
-                    <button onclick="document.getElementById('invoiceLoadId').value = '{{ load.id }}'; document.getElementById('invoiceForm').action = '/generate-invoice/{{ load.id }}';"
-                            class="btn btn-sm btn-warning mt-1 fw-bold shadow-sm" style="font-size: 0.75rem;" 
-                            data-bs-toggle="modal" data-bs-target="#invoiceModal">
-                        <i class="bi bi-receipt"></i> Invoice Load
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-{% else %}
-    <p class="text-muted small">All caught up!</p>
-{% endif %}
-
-<!-- History Section (Last 10 Invoiced Loads) -->
-<h6 class="text-muted text-uppercase small fw-bold mt-4">History (Recent Invoiced)</h6>
-{% if history_loads %}
-    {% for load in history_loads %}
-    <div class="card mb-2 shadow-sm border-0 bg-white">
-        <div class="card-body py-2 px-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="fw-bold fs-6">{{ load.delivery_location }}</div>
-                    <div class="text-muted small">{{ load.broker_name }} | Delivered: {{ load.actual_delivery_date }}</div>
-                </div>
-                <div class="text-end">
-                    <div class="fw-bold text-success">${{ "{:,.2f}".format(load.rate_amount) }}</div>
-                    <div class="mt-1">
-                        {% if load.invoice_pdf_path %}
-                        <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-sm btn-outline-danger fw-bold shadow-sm me-1" style="font-size: 0.75rem;">
-                            <i class="bi bi-file-pdf"></i> PDF
-                        </a>
-                        {% endif %}
-                        <span class="badge bg-success shadow-sm" style="font-size: 0.75rem;">
-                            <i class="bi bi-receipt"></i> Invoiced
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-{% else %}
-    <p class="text-muted small">No invoiced history yet.</p>
-{% endif %}
-
-<!-- Add Load Modal (HTMX Powered) -->
-<div class="modal fade" id="addLoadModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold">Add Load Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                
-                <!-- 1. The HTMX File Upload Form -->
-                <form id="uploadForm" 
-                      hx-post="/parse-rate-con-html/" 
-                      hx-encoding="multipart/form-data" 
-                      hx-target="#ai-results" 
-                      hx-indicator="#loading-spinner">
-                    
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Upload Rate Confirmation Pages (PDF/Images)</label>
-                        <input class="form-control" type="file" name="files" accept="application/pdf, image/jpeg, image/png, image/webp" multiple required>
-                        <div class="form-text small">Select multiple pages or files if needed.</div>
-                    </div>
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-dark flex-grow-1">
-                            <i class="bi bi-magic"></i> Extract with AI
-                        </button>
-                        <button type="button" 
-                                class="btn btn-outline-secondary" 
-                                hx-get="/manual-load-form/" 
-                                hx-target="#ai-results"
-                                hx-indicator="#loading-spinner">
-                            <i class="bi bi-pencil-square"></i> Enter Manually
-                        </button>
-                    </div>
-                </form>
-
-                <!-- 2. The Loading Spinner (Hidden by default, shown by HTMX) -->
-                <div id="loading-spinner" class="htmx-indicator text-center my-4">
-                    <div class="spinner-border text-primary" role="status"></div>
-                    <p class="mt-2 text-muted small">Processing...</p>
-                </div>
-
-                <!-- 3. Where the HTML snippet will be injected -->
-                <div id="ai-results" class="mt-4"></div>
-
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Generate Invoice Modal -->
-<div class="modal fade" id="invoiceModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold">Generate Invoice</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="invoiceForm" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" id="invoiceLoadId" value="">
-                    
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Upload Signed BOL</label>
-                        <input class="form-control" type="file" name="bol_file" accept="image/*, application/pdf" required>
-                        <div class="form-text">Take a picture of the signed Bill of Lading.</div>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-warning w-100 fw-bold shadow-sm">
-                        <i class="bi bi-file-earmark-pdf"></i> Generate PDF Invoice
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Tiny style block so HTMX knows how to hide/show the spinner -->
-<style>
-    .htmx-indicator { display: none; }
-    .htmx-request .htmx-indicator { display: block; }
-    .htmx-request.htmx-indicator { display: block; }
-</style>
-
+{% block scripts %}
+<script>
+    // Greeting uses the phone's local time, not the server's
+    (function () {
+        var hour = new Date().getHours();
+        var part = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+        document.getElementById("greeting").textContent = "Good " + part + ",";
+    })();
+</script>
 {% endblock %}

@@ -4,98 +4,117 @@
     <meta charset="UTF-8">
     <title>Invoice {{ invoice_number }}</title>
     <style>
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 0; padding: 40px; }
-        .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-        .company-info h1 { margin: 0 0 10px 0; font-size: 24px; color: #0d6efd; text-transform: uppercase; }
-        .company-info p { margin: 2px 0; font-size: 14px; }
-        .invoice-title { text-align: right; }
-        .invoice-title h2 { margin: 0 0 5px 0; font-size: 36px; color: #333; text-transform: uppercase; letter-spacing: 2px; }
-        .invoice-title p { margin: 2px 0; font-size: 14px; font-weight: bold; }
-        
-        .billing-row { display: flex; justify-content: space-between; margin-bottom: 40px; }
-        .bill-to h3 { margin: 0 0 10px 0; font-size: 16px; color: #666; text-transform: uppercase; }
-        .bill-to p { margin: 2px 0; font-size: 16px; font-weight: bold; }
-        
-        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-        th { background-color: #f8f9fa; text-align: left; padding: 12px; border-bottom: 2px solid #dee2e6; font-size: 12px; text-transform: uppercase; color: #666; }
-        td { padding: 12px; border-bottom: 1px solid #dee2e6; font-size: 14px; }
-        
-        .totals { width: 50%; float: right; }
-        .totals table th { background: transparent; text-align: right; padding-right: 20px; border: none; font-size: 16px; color: #333; }
-        .totals table td { text-align: right; font-size: 20px; font-weight: bold; color: #198754; border: none; }
-        
-        .footer { clear: both; margin-top: 60px; padding-top: 20px; border-top: 1px solid #dee2e6; font-size: 12px; color: #666; }
-        .bank-info h4 { margin: 0 0 5px 0; color: #333; }
+        @page { size: Letter; margin: 0; }
+        * { box-sizing: border-box; }
+        body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #0f172a; margin: 0; font-size: 13px; line-height: 1.45; }
+        .band { background: #0b1a3a; color: #f1f5ff; padding: 36px 48px 32px; }
+        .band table, .meta, .lines, .totals { width: 100%; border-collapse: collapse; }
+        .company { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+        .company-address { color: #b8c4e0; margin-top: 4px; }
+        .title { text-align: right; font-size: 30px; font-weight: 800; letter-spacing: 3px; color: #ffffff; }
+        .title-number { text-align: right; color: #8fb3ff; font-weight: 600; margin-top: 2px; }
+        .content { padding: 36px 48px; }
+        .label { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
+        .meta td { vertical-align: top; padding-bottom: 28px; }
+        .meta .value { font-size: 15px; font-weight: 700; }
+        .muted { color: #64748b; }
+        .lines th { text-align: left; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #64748b; padding: 10px 12px; border-bottom: 2px solid #e4e9f2; background: #f3f6fb; }
+        .lines td { padding: 14px 12px; border-bottom: 1px solid #e4e9f2; vertical-align: top; }
+        .lines .amount { text-align: right; font-weight: 700; white-space: nowrap; }
+        .totals { width: 46%; margin: 24px 0 0 auto; }
+        .totals td { padding: 8px 12px; }
+        .totals .due td { background: #1f6bff; color: #ffffff; font-size: 16px; font-weight: 800; border-radius: 6px; padding: 12px; }
+        .totals .right { text-align: right; }
+        .pay { margin-top: 44px; padding: 18px 20px; border: 1px solid #e4e9f2; border-radius: 10px; background: #f8fafc; }
+        .pay table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        .pay td { padding: 2px 0; }
+        .footer { margin-top: 36px; color: #64748b; font-size: 12px; }
     </style>
 </head>
 <body>
-
-    <div class="header">
-        <div class="company-info">
-            <h1>{{ settings.company_name or 'My Trucking Co' }}</h1>
-            {% if settings.show_address_on_invoice %}
-                <p>{{ settings.street_address or '' }}</p>
-                <p>{{ settings.city_state_zip or '' }}</p>
-            {% endif %}
-        </div>
-        <div class="invoice-title">
-            <h2>INVOICE</h2>
-            <p>Invoice #: {{ invoice_number }}</p>
-            <p>Date: {{ date_today }}</p>
-        </div>
-    </div>
-
-    <div class="billing-row">
-        <div class="bill-to">
-            <h3>Bill To:</h3>
-            <p>{{ load.broker_name }}</p>
-            <p style="font-weight: normal; color: #666;">Ref / Load #: {{ load.load_reference }}</p>
-        </div>
-    </div>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th>Pickup</th>
-                <th>Delivery</th>
-                <th style="text-align: right;">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>Freight Transportation Services<br><small style="color:#666;">Load #{{ load.load_reference }}</small></td>
-                <td>{{ load.pickup_location }}<br><small style="color:#666;">{{ load.pickup_date }}</small></td>
-                <td>
-                    {{ load.delivery_location }}<br>
-                    <small style="color:#666;">
-                        {{ load.actual_delivery_date or load.delivery_date }}
-                    </small>
-                </td>
-                <td style="text-align: right;">${{ "{:,.2f}".format(load.rate_amount) }}</td>
-            </tr>
-        </tbody>
-    </table>
-
-    <div class="totals">
+    <div class="band">
         <table>
             <tr>
-                <th>Total Due:</th>
-                <td>${{ "{:,.2f}".format(load.rate_amount) }}</td>
+                <td>
+                    <div class="company">{{ settings.company_name or 'My Trucking Co' }}</div>
+                    {% if settings.show_address_on_invoice %}
+                    <div class="company-address">
+                        {{ settings.street_address or '' }}{% if settings.street_address and settings.city_state_zip %}<br>{% endif %}{{ settings.city_state_zip or '' }}
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="title">INVOICE</div>
+                    <div class="title-number">{{ invoice_number }}</div>
+                </td>
             </tr>
         </table>
     </div>
 
-    <div class="footer">
-        {% if settings.show_bank_on_invoice and settings.bank_name %}
-        <div class="bank-info">
-            <h4>Direct Deposit / ACH Instructions:</h4>
-            <p>Bank Name: {{ settings.bank_name }} | Routing #: {{ settings.routing_number }} | Account #: {{ settings.account_number }}</p>
-        </div>
-        {% else %}
-        <p>Thank you for your business. Please remit payment referencing Invoice #{{ invoice_number }}.</p>
-        {% endif %}
-    </div>
+    <div class="content">
+        <table class="meta">
+            <tr>
+                <td style="width: 50%;">
+                    <div class="label">Bill To</div>
+                    <div class="value">{{ load.broker_name }}</div>
+                    {% if load.broker_email %}<div class="muted">{{ load.broker_email }}</div>{% endif %}
+                </td>
+                <td style="width: 25%;">
+                    <div class="label">Invoice Date</div>
+                    <div class="value">{{ date_today }}</div>
+                </td>
+                <td style="width: 25%;">
+                    <div class="label">Load #</div>
+                    <div class="value">{{ load.load_reference }}</div>
+                </td>
+            </tr>
+        </table>
 
+        <table class="lines">
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th>Pickup</th>
+                    <th>Delivery</th>
+                    <th style="text-align: right;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <strong>Freight Transportation Services</strong><br>
+                        <span class="muted">Load #{{ load.load_reference }}{% if load.loaded_miles %} · {{ "{:,}".format(load.loaded_miles) }} loaded mi{% endif %}</span>
+                    </td>
+                    <td>{{ load.pickup_location }}<br><span class="muted">{{ load.pickup_date.strftime("%b %d, %Y") }}</span></td>
+                    <td>{{ load.delivery_location }}<br><span class="muted">{{ (load.actual_delivery_date or load.delivery_date).strftime("%b %d, %Y") }}</span></td>
+                    <td class="amount">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="totals">
+            <tr>
+                <td class="muted">Subtotal</td>
+                <td class="right">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+            </tr>
+            <tr class="due">
+                <td>Total Due</td>
+                <td class="right">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+            </tr>
+        </table>
+
+        {% if settings.show_bank_on_invoice and settings.bank_name %}
+        <div class="pay">
+            <div class="label">Direct Deposit / ACH</div>
+            <table>
+                <tr><td class="muted" style="width: 120px;">Bank</td><td><strong>{{ settings.bank_name }}</strong></td></tr>
+                <tr><td class="muted">Routing #</td><td><strong>{{ settings.routing_number }}</strong></td></tr>
+                <tr><td class="muted">Account #</td><td><strong>{{ settings.account_number }}</strong></td></tr>
+            </table>
+        </div>
+        {% endif %}
+
+        <p class="footer">Thank you for your business. Please reference invoice {{ invoice_number }} with your payment.</p>
+    </div>
 </body>
 </html>

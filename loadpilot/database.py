@@ -29,6 +29,11 @@ MIGRATIONS: list[list[str]] = [
         )
         """,
     ],
+    # 3: timestamps for the dashboard's recent activity
+    [
+        "ALTER TABLE loads ADD COLUMN created_at TEXT",
+        "ALTER TABLE loads ADD COLUMN invoiced_at TEXT",
+    ],
 ]
 
 
@@ -155,6 +160,7 @@ class DatabaseManager:
     # LOADS PERSISTENCE
     # -----------------------------------------
     async def add_load(self, load: Load) -> Load:
+        load.created_at = load.created_at or datetime.now().replace(microsecond=0)
         async with aiosqlite.connect(self.db_path) as db:
             actual_del = load.actual_delivery_date.isoformat() if load.actual_delivery_date else None
             cursor = await db.execute(
@@ -162,8 +168,8 @@ class DatabaseManager:
                     invoice_number, broker_name, broker_email, load_reference,
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, status, notes,
-                    rate_con_pdf_path, bol_pdf_path, invoice_pdf_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -181,6 +187,8 @@ class DatabaseManager:
                     load.rate_con_pdf_path,
                     load.bol_pdf_path,
                     load.invoice_pdf_path,
+                    load.created_at.isoformat(),
+                    load.invoiced_at.isoformat() if load.invoiced_at else None,
                 ),
             )
             await db.commit()
@@ -280,100 +288,30 @@ class DatabaseManager:
             rate_con_pdf_path=row["rate_con_pdf_path"],
             bol_pdf_path=row["bol_pdf_path"],
             invoice_pdf_path=row["invoice_pdf_path"],
+            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+            invoiced_at=datetime.fromisoformat(row["invoiced_at"]) if row["invoiced_at"] else None,
         )
 
-    async def get_analytics_data(self) -> dict:
-        """Aggregates rates, miles, RPM, and broker data for analytics.
+    async def get_earned_loads(self) -> list[Load]:
+        """Loads that have actually been delivered (Delivered or Invoiced); the basis for analytics."""
+        return await self._fetch_loads(
+            "SELECT * FROM loads WHERE status IN (?, ?)", (LoadStatus.DELIVERED, LoadStatus.INVOICED)
+        )
 
-        Only loads that have actually been delivered (Delivered or Invoiced) count as earned.
-        """
+    async def get_recent_loads(self, limit: int = 20) -> list[Load]:
+        """Most recently added loads first."""
+        return await self._fetch_loads("SELECT * FROM loads ORDER BY id DESC LIMIT ?", (limit,))
+
+    async def count_loads_by_status(self) -> dict[LoadStatus, int]:
+        counts = dict.fromkeys(LoadStatus, 0)
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT status, COUNT(*) FROM loads GROUP BY status") as cursor:
+                for status, count in await cursor.fetchall():
+                    counts[LoadStatus(status)] = count
+        return counts
+
+    async def _fetch_loads(self, query: str, params: tuple) -> list[Load]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM loads WHERE status IN (?, ?)", (LoadStatus.DELIVERED, LoadStatus.INVOICED)
-            ) as cursor:
-                rows = await cursor.fetchall()
-
-            today = date.today()
-            current_year = today.year
-            current_month = today.month
-
-            # Iso-week calendar metrics for current week groupings
-            current_year_iso, current_week_iso, _ = today.isocalendar()
-
-            total_revenue = 0.0
-            total_miles = 0
-
-            ytd_revenue = 0.0
-            ytd_miles = 0
-
-            monthly_revenue = 0.0
-            monthly_miles = 0
-
-            weekly_revenue = 0.0
-            weekly_miles = 0
-
-            broker_map = {}  # broker_name -> {"revenue": X, "miles": Y, "load_count": Z}
-
-            for row in rows:
-                rate = row["rate_amount"]
-                miles = row["loaded_miles"] or 0
-                broker = row["broker_name"]
-
-                delivery_date_str = row["actual_delivery_date"] or row["delivery_date"]
-                delivery_date = date.fromisoformat(delivery_date_str)
-
-                # Global totals
-                total_revenue += rate
-                total_miles += miles
-
-                # YTD Metrics
-                if delivery_date.year == current_year:
-                    ytd_revenue += rate
-                    ytd_miles += miles
-
-                # Monthly Metrics
-                if delivery_date.year == current_year and delivery_date.month == current_month:
-                    monthly_revenue += rate
-                    monthly_miles += miles
-
-                # Weekly Metrics
-                py_year, py_week, _ = delivery_date.isocalendar()
-                if py_year == current_year_iso and py_week == current_week_iso:
-                    weekly_revenue += rate
-                    weekly_miles += miles
-
-                # Broker aggregation
-                if broker not in broker_map:
-                    broker_map[broker] = {"revenue": 0.0, "miles": 0, "load_count": 0}
-                broker_map[broker]["revenue"] += rate
-                broker_map[broker]["miles"] += miles
-                broker_map[broker]["load_count"] += 1
-
-            # Safely calculate RPM
-            def calc_rpm(rev: float, mi: int) -> float:
-                return rev / mi if mi > 0 else 0.0
-
-            # Broker list sorted by revenue descending
-            broker_list = []
-            for b_name, stats in broker_map.items():
-                stats["rpm"] = calc_rpm(stats["revenue"], stats["miles"])
-                stats["name"] = b_name
-                broker_list.append(stats)
-            broker_list.sort(key=lambda x: x["revenue"], reverse=True)
-
-            return {
-                "total_revenue": total_revenue,
-                "total_miles": total_miles,
-                "global_rpm": calc_rpm(total_revenue, total_miles),
-                "ytd_revenue": ytd_revenue,
-                "ytd_miles": ytd_miles,
-                "ytd_rpm": calc_rpm(ytd_revenue, ytd_miles),
-                "monthly_revenue": monthly_revenue,
-                "monthly_miles": monthly_miles,
-                "monthly_rpm": calc_rpm(monthly_revenue, monthly_miles),
-                "weekly_revenue": weekly_revenue,
-                "weekly_miles": weekly_miles,
-                "weekly_rpm": calc_rpm(weekly_revenue, weekly_miles),
-                "brokers": broker_list[:5],
-            }
+            async with db.execute(query, params) as cursor:
+                return [self._row_to_load(row) for row in await cursor.fetchall()]

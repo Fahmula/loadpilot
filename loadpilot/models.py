@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
@@ -29,6 +29,8 @@ class Load(BaseModel):
     rate_con_pdf_path: str | None = None
     bol_pdf_path: str | None = None
     invoice_pdf_path: str | None = None
+    created_at: datetime | None = None
+    invoiced_at: datetime | None = None
 
 
 class User(BaseModel):

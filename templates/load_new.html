@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import back_header %}
+
+{% block title %}Add Load · LoadPilot{% endblock %}
+
+{% block content %}
+{{ back_header("Add Load", "/loads", "Scan a rate confirmation or enter it yourself") }}
+
+<div id="add-load-start" class="space-y-4">
+    <form class="card-soft p-5" hx-post="/parse-rate-con-html/" hx-encoding="multipart/form-data"
+          hx-target="#load-form-slot" hx-indicator="#extracting" hx-disabled-elt="find button">
+        <div class="mb-4 flex items-center gap-3">
+            <span class="grid size-10 place-items-center rounded-xl bg-secondary/12 text-secondary">{{ icon("sparkles", "size-5") }}</span>
+            <div>
+                <h2 class="font-bold">Scan Rate Confirmation</h2>
+                <p class="text-sm text-base-content/60">AI reads the broker, route, rate, miles and pickup numbers.</p>
+            </div>
+        </div>
+
+        {% if not has_ai_key %}
+        <div role="alert" class="alert alert-soft alert-warning mb-4 text-sm">
+            {{ icon("circle-alert", "size-5") }}
+            <span>Add your Gemini API key in <a href="/settings" class="link font-semibold">Settings</a> to scan rate cons.</span>
+        </div>
+        {% endif %}
+
+        <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-base-300 bg-base-200/50 px-4 py-10 text-center transition hover:border-primary hover:bg-primary/5" data-file-drop>
+            <span class="grid size-14 place-items-center rounded-full bg-primary/12 text-primary">{{ icon("cloud-upload", "size-7") }}</span>
+            <span class="font-semibold" data-file-label>Photo, screenshot or PDF</span>
+            <span class="text-xs text-base-content/60">Select every page. Email screenshots work too.</span>
+            <input type="file" name="files" accept="application/pdf,image/*" multiple required class="sr-only">
+        </label>
+
+        <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl" {% if not has_ai_key %}disabled{% endif %}>
+            {{ icon("sparkles", "size-5") }} Extract with AI
+        </button>
+
+        <div id="extracting" class="htmx-indicator mt-4 items-center justify-center gap-3 rounded-xl bg-primary/8 p-4 text-sm font-medium text-primary">
+            <span class="loading loading-spinner loading-sm"></span> Reading your rate con. This takes a few seconds...
+        </div>
+    </form>
+
+    <div class="divider text-sm text-base-content/50">or</div>
+
+    <button class="btn btn-outline w-full rounded-xl border-base-300 bg-base-100" hx-get="/manual-load-form/" hx-target="#load-form-slot">
+        {{ icon("pencil", "size-5") }} Enter Manually
+    </button>
+</div>
+
+<div id="load-form-slot" class="mt-4"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll("[data-file-drop]").forEach(function (zone) {
+        var input = zone.querySelector("input[type=file]");
+        input.addEventListener("change", function () {
+            var count = input.files.length;
+            if (count) zone.querySelector("[data-file-label]").textContent = count === 1 ? input.files[0].name : count + " pages selected";
+        });
+    });
+    // Once a review form arrives, bring it into view
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+        if (event.detail.target.id === "load-form-slot" && event.detail.target.querySelector("form")) {
+            event.detail.target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+</script>
+{% endblock %}
