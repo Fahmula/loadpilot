@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Lets the release workflow run the same checks before publishing an image
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.14"
+          activate-environment: true
+          cache-dependency-glob: requirements*.txt
+      - run: uv pip install -r requirements-dev.txt
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+      - name: Ruff format
+        run: ruff format --check .
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install WeasyPrint system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.14"
+          activate-environment: true
+          cache-dependency-glob: requirements*.txt
+      - run: uv pip install -r requirements-dev.txt
+      - run: pytest -v
+
+  docker:
+    name: Docker build & smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: loadpilot:ci
+          build-args: LOADPILOT_VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Render a PDF inside the image
+        run: >
+          docker run --rm --entrypoint python loadpilot:ci -c
+          "from weasyprint import HTML; assert HTML(string='<h1>ok</h1>').write_pdf().startswith(b'%PDF')"
+      - name: Start container and check /health
+        run: |
+          docker run -d --name loadpilot -p 8000:8000 loadpilot:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs loadpilot
+          exit 1
