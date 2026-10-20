@@ -33,7 +33,9 @@ async def test_get_loads_filters_by_status_and_search(db):
 async def test_update_load_writes_allowed_fields(db):
     saved = await db.add_load(make_load())
 
-    updated = await db.update_load(saved.id, {"status": LoadStatus.DELIVERED, "actual_delivery_date": date(2026, 10, 4)})
+    updated = await db.update_load(
+        saved.id, {"status": LoadStatus.DELIVERED, "actual_delivery_date": date(2026, 10, 4)}
+    )
 
     assert updated.status is LoadStatus.DELIVERED
     assert updated.actual_delivery_date == date(2026, 10, 4)

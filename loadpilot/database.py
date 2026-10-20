@@ -1,6 +1,8 @@
-import aiosqlite
 import logging
 from datetime import date, datetime
+
+import aiosqlite
+
 from loadpilot.models import Load, LoadStatus
 
 logger = logging.getLogger("loadpilot.database")
@@ -17,6 +19,7 @@ MIGRATIONS: list[list[str]] = [
         "WHERE rate_con_pdf_path LIKE 'static/invoices/%'",
     ],
 ]
+
 
 class DatabaseManager:
     def __init__(self, db_path: str = "loadpilot.db"):
@@ -45,7 +48,7 @@ class DatabaseManager:
                     bol_pdf_path TEXT
                 )
             """)
-            
+
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -72,10 +75,7 @@ class DatabaseManager:
     # -----------------------------------------
     async def save_setting(self, key: str, value: str):
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                (key, str(value))
-            )
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
             await db.commit()
 
     async def get_setting(self, key: str, default: str = "") -> str:
@@ -109,17 +109,29 @@ class DatabaseManager:
             actual_del = load.actual_delivery_date.isoformat() if load.actual_delivery_date else None
             cursor = await db.execute(
                 """INSERT INTO loads (
-                    invoice_number, broker_name, broker_email, load_reference, 
-                    rate_amount, pickup_location, pickup_date, delivery_location, 
-                    delivery_date, actual_delivery_date, loaded_miles, status, notes, 
+                    invoice_number, broker_name, broker_email, load_reference,
+                    rate_amount, pickup_location, pickup_date, delivery_location,
+                    delivery_date, actual_delivery_date, loaded_miles, status, notes,
                     rate_con_pdf_path, bol_pdf_path, invoice_pdf_path
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    load.invoice_number, load.broker_name, load.broker_email, load.load_reference,
-                    load.rate_amount, load.pickup_location, load.pickup_date.isoformat(), load.delivery_location,
-                    load.delivery_date.isoformat(), actual_del, load.loaded_miles, load.status.value, load.notes,
-                    load.rate_con_pdf_path, load.bol_pdf_path, load.invoice_pdf_path
-                )
+                    load.invoice_number,
+                    load.broker_name,
+                    load.broker_email,
+                    load.load_reference,
+                    load.rate_amount,
+                    load.pickup_location,
+                    load.pickup_date.isoformat(),
+                    load.delivery_location,
+                    load.delivery_date.isoformat(),
+                    actual_del,
+                    load.loaded_miles,
+                    load.status.value,
+                    load.notes,
+                    load.rate_con_pdf_path,
+                    load.bol_pdf_path,
+                    load.invoice_pdf_path,
+                ),
             )
             await db.commit()
             load.id = cursor.lastrowid
@@ -135,21 +147,17 @@ class DatabaseManager:
                 return None
 
     async def get_loads(
-        self, 
-        skip: int = 0, 
-        limit: int = 100, 
-        status: LoadStatus | None = None,
-        search_query: str | None = None
+        self, skip: int = 0, limit: int = 100, status: LoadStatus | None = None, search_query: str | None = None
     ) -> list[Load]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             conditions = []
             params = []
-            
+
             if status:
                 conditions.append("status = ?")
                 params.append(status.value)
-                
+
             if search_query:
                 conditions.append(
                     "(broker_name LIKE ? OR load_reference LIKE ? OR invoice_number LIKE ? "
@@ -157,11 +165,11 @@ class DatabaseManager:
                 )
                 search_param = f"%{search_query}%"
                 params.extend([search_param] * 5)
-                
+
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             query = f"SELECT * FROM loads {where_clause} ORDER BY pickup_date DESC LIMIT ? OFFSET ?"
             params.extend([limit, skip])
-            
+
             async with db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
                 return [self._row_to_load(row) for row in rows]
@@ -184,14 +192,14 @@ class DatabaseManager:
                 params.append(val.value)
             else:
                 params.append(val)
-        
+
         params.append(load_id)
         query = f"UPDATE loads SET {', '.join(set_clauses)} WHERE id = ?"
-        
+
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(query, params)
             await db.commit()
-            
+
         return await self.get_load(load_id)
 
     async def delete_load(self, load_id: int) -> bool:
@@ -203,7 +211,7 @@ class DatabaseManager:
     def _row_to_load(self, row: aiosqlite.Row) -> Load:
         actual_del_val = row["actual_delivery_date"]
         actual_delivery_date = date.fromisoformat(actual_del_val) if actual_del_val else None
-        
+
         return Load(
             id=row["id"],
             invoice_number=row["invoice_number"],
@@ -221,7 +229,7 @@ class DatabaseManager:
             notes=row["notes"],
             rate_con_pdf_path=row["rate_con_pdf_path"],
             bol_pdf_path=row["bol_pdf_path"],
-            invoice_pdf_path=row["invoice_pdf_path"]
+            invoice_pdf_path=row["invoice_pdf_path"],
         )
 
     async def get_analytics_data(self) -> dict:
@@ -230,67 +238,67 @@ class DatabaseManager:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM loads WHERE status != 'Draft'") as cursor:
                 rows = await cursor.fetchall()
-                
+
             today = date.today()
             current_year = today.year
             current_month = today.month
-            
+
             # Iso-week calendar metrics for current week groupings
             current_year_iso, current_week_iso, _ = today.isocalendar()
-            
+
             total_revenue = 0.0
             total_miles = 0
-            
+
             ytd_revenue = 0.0
             ytd_miles = 0
-            
+
             monthly_revenue = 0.0
             monthly_miles = 0
-            
+
             weekly_revenue = 0.0
             weekly_miles = 0
-            
-            broker_map = {} # broker_name -> {"revenue": X, "miles": Y, "load_count": Z}
-            
+
+            broker_map = {}  # broker_name -> {"revenue": X, "miles": Y, "load_count": Z}
+
             for row in rows:
                 rate = row["rate_amount"]
                 miles = row["loaded_miles"] or 0
                 broker = row["broker_name"]
-                
+
                 delivery_date_str = row["actual_delivery_date"] or row["delivery_date"]
                 delivery_date = date.fromisoformat(delivery_date_str)
-                
+
                 # Global totals
                 total_revenue += rate
                 total_miles += miles
-                
+
                 # YTD Metrics
                 if delivery_date.year == current_year:
                     ytd_revenue += rate
                     ytd_miles += miles
-                    
+
                 # Monthly Metrics
                 if delivery_date.year == current_year and delivery_date.month == current_month:
                     monthly_revenue += rate
                     monthly_miles += miles
-                    
+
                 # Weekly Metrics
                 py_year, py_week, _ = delivery_date.isocalendar()
                 if py_year == current_year_iso and py_week == current_week_iso:
                     weekly_revenue += rate
                     weekly_miles += miles
-                    
+
                 # Broker aggregation
                 if broker not in broker_map:
                     broker_map[broker] = {"revenue": 0.0, "miles": 0, "load_count": 0}
                 broker_map[broker]["revenue"] += rate
                 broker_map[broker]["miles"] += miles
                 broker_map[broker]["load_count"] += 1
-                
+
             # Safely calculate RPM
             def calc_rpm(rev: float, mi: int) -> float:
                 return rev / mi if mi > 0 else 0.0
-                
+
             # Broker list sorted by revenue descending
             broker_list = []
             for b_name, stats in broker_map.items():
@@ -298,7 +306,7 @@ class DatabaseManager:
                 stats["name"] = b_name
                 broker_list.append(stats)
             broker_list.sort(key=lambda x: x["revenue"], reverse=True)
-            
+
             return {
                 "total_revenue": total_revenue,
                 "total_miles": total_miles,
@@ -312,5 +320,5 @@ class DatabaseManager:
                 "weekly_revenue": weekly_revenue,
                 "weekly_miles": weekly_miles,
                 "weekly_rpm": calc_rpm(weekly_revenue, weekly_miles),
-                "brokers": broker_list[:5]
+                "brokers": broker_list[:5],
             }

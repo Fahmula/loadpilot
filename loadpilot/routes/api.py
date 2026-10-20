@@ -1,23 +1,22 @@
 import aiosqlite
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
 from loadpilot.models import Load, LoadStatus, LoadUpdate
 
 router = APIRouter(prefix="/api/loads", tags=["Loads"])
+
 
 @router.post("/", response_model=Load)
 async def create_load(load: Load, request: Request):
     db = request.app.state.db
     return await db.add_load(load)
 
+
 @router.get("/", response_model=list[Load])
-async def read_loads(
-    request: Request,
-    skip: int = 0,
-    limit: int = 100,
-    status: LoadStatus | None = None
-):
+async def read_loads(request: Request, skip: int = 0, limit: int = 100, status: LoadStatus | None = None):
     db = request.app.state.db
     return await db.get_loads(skip=skip, limit=limit, status=status)
+
 
 @router.get("/{load_id}", response_model=Load)
 async def read_load(load_id: int, request: Request):
@@ -26,6 +25,7 @@ async def read_load(load_id: int, request: Request):
     if not db_load:
         raise HTTPException(status_code=404, detail="Load not found")
     return db_load
+
 
 @router.put("/{load_id}", response_model=Load)
 async def update_load(load_id: int, load_update: LoadUpdate, request: Request):
@@ -37,6 +37,7 @@ async def update_load(load_id: int, load_update: LoadUpdate, request: Request):
     if not db_load:
         raise HTTPException(status_code=404, detail="Load not found")
     return db_load
+
 
 @router.delete("/{load_id}")
 async def delete_load(load_id: int, request: Request):
