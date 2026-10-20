@@ -1,44 +1,39 @@
 FROM python:3.14-slim
 
-# Install system dependencies required by WeasyPrint for PDF rendering
+# Runtime libraries WeasyPrint needs to render invoice PDFs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
-    libharfbuzz0b \
-    libgirepository-1.0-1 \
+    libharfbuzz-subset0 \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    jinja2 \
-    python-multipart \
-    pydantic \
-    aiosqlite \
-    google-genai \
-    python-dotenv \
-    pypdf \
-    weasyprint
+# Install pinned Python dependencies first so this layer is cached between code changes
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application files
 COPY app.py /app/app.py
 COPY loadpilot /app/loadpilot
 COPY entry.sh /app/entry.sh
-COPY requirements.txt /app/requirements.txt
 COPY templates /app/templates
 COPY static /app/static
 
-RUN mkdir -p /config/logs static/bols static/invoices
-
 RUN chmod +x /app/entry.sh
+
+# Version is passed in by the release workflow from the git tag
+ARG LOADPILOT_VERSION=dev
+ENV LOADPILOT_VERSION=${LOADPILOT_VERSION} \
+    LOADPILOT_DATA_DIR=/config \
+    PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
 VOLUME /config
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
 
 ENTRYPOINT ["/app/entry.sh"]
