@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # Runtime libraries WeasyPrint needs to render invoice PDFs
 RUN apt-get update && apt-get install -y --no-install-recommends \
