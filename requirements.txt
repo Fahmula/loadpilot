@@ -30,13 +30,13 @@ cssselect2==0.9.0
     # via weasyprint
 distro==1.9.0
     # via google-genai
-fastapi==0.139.0
+fastapi==0.143.3
     # via -r requirements.in
-fonttools==4.63.0
+fonttools[woff]==4.63.0
     # via weasyprint
-google-auth==2.55.2
+google-auth[requests]==2.62.0
     # via google-genai
-google-genai==2.11.0
+google-genai==2.31.0
     # via -r requirements.in
 h11==0.16.0
     # via
@@ -55,6 +55,8 @@ jinja2==3.1.6
     # via -r requirements.in
 markupsafe==3.0.3
     # via jinja2
+opentelemetry-api==1.45.1
+    # via fastapi
 pillow==12.3.0
     # via weasyprint
 pyasn1==0.6.4
@@ -63,18 +65,18 @@ pyasn1-modules==0.4.2
     # via google-auth
 pycparser==3.0
     # via cffi
-pydantic==2.13.4
+pydantic==2.14.1
     # via
     #   -r requirements.in
     #   fastapi
     #   google-genai
-pydantic-core==2.46.4
+pydantic-core==2.50.1
     # via pydantic
 pydyf==0.12.1
     # via weasyprint
 pyphen==0.17.2
     # via weasyprint
-python-dotenv==1.2.2
+python-dotenv==1.2.4
     # via -r requirements.in
 python-multipart==0.0.32
     # via -r requirements.in
@@ -98,18 +100,19 @@ typing-extensions==4.16.0
     # via
     #   fastapi
     #   google-genai
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.4
     # via
     #   fastapi
     #   pydantic
 urllib3==2.7.0
     # via requests
-uvicorn==0.51.0
+uvicorn==0.54.0
     # via -r requirements.in
-weasyprint==69.0
+weasyprint==70.0
     # via -r requirements.in
 webencodings==0.5.1
     # via
