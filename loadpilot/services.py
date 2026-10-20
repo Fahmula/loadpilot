@@ -1,11 +1,13 @@
 import json
 import logging
+
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
 
 def parse_rate_con_with_ai(files_data: list[tuple[bytes, str]], api_key: str) -> dict | None:
     """Sends raw document bytes (one or more pages) directly to Gemini Vision to extract metadata."""
@@ -13,12 +15,12 @@ def parse_rate_con_with_ai(files_data: list[tuple[bytes, str]], api_key: str) ->
         logger.error("Missing Gemini API Key. Extraction aborted.")
         return None
 
-    prompt = """ 
-    You are an AI assistant for a trucking owner-operator. 
+    prompt = """
+    You are an AI assistant for a trucking owner-operator.
     Look at the attached document pages (Rate Confirmation) and extract these exact details.
     Analyze all pages provided to gather complete and accurate information.
     Return ONLY a valid JSON object matching this exact structure, with no other text:
-    
+
     {
         "broker_name": "String (Name of the brokerage)",
         "broker_email": "String or null if not found",
@@ -35,9 +37,7 @@ def parse_rate_con_with_ai(files_data: list[tuple[bytes, str]], api_key: str) ->
     try:
         client = genai.Client(api_key=api_key)
 
-        parts: list[types.Part] = [
-            types.Part.from_text(text=prompt)
-        ]
+        parts: list[types.Part] = [types.Part.from_text(text=prompt)]
 
         for file_bytes, mime_type in files_data:
             parts.append(
@@ -57,12 +57,12 @@ def parse_rate_con_with_ai(files_data: list[tuple[bytes, str]], api_key: str) ->
                 response_mime_type="application/json",
             ),
         )
-        
+
         response_text = response.text
         if not response_text:
             logger.error("Gemini Vision returned an empty or null response.")
             return None
-            
+
         return json.loads(response_text)
     except Exception as e:
         logger.error(f"Gemini Vision Parsing Error: {e}", exc_info=True)
