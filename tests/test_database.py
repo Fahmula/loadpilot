@@ -106,9 +106,18 @@ async def test_migration_moves_invoice_out_of_rate_con_column(tmp_path):
 
 async def test_analytics_totals_and_rpm(db):
     today = date.today()
-    await db.add_load(make_load(rate_amount=3000.0, loaded_miles=1000, delivery_date=today))
-    await db.add_load(make_load(broker_name="Blue Freight", rate_amount=1000.0, loaded_miles=500, delivery_date=today))
-    await db.add_load(make_load(rate_amount=9999.0, loaded_miles=1, status=LoadStatus.DRAFT, delivery_date=today))
+    await db.add_load(
+        make_load(rate_amount=3000.0, loaded_miles=1000, delivery_date=today, status=LoadStatus.DELIVERED)
+    )
+    await db.add_load(
+        make_load(
+            broker_name="Blue Freight",
+            rate_amount=1000.0,
+            loaded_miles=500,
+            delivery_date=today,
+            status=LoadStatus.INVOICED,
+        )
+    )
 
     analytics = await db.get_analytics_data()
 
@@ -120,8 +129,37 @@ async def test_analytics_totals_and_rpm(db):
     assert analytics["brokers"][0]["rpm"] == 3.0
 
 
+async def test_analytics_ignores_loads_not_yet_delivered(db):
+    today = date.today()
+    await db.add_load(make_load(rate_amount=9999.0, status=LoadStatus.DRAFT, delivery_date=today))
+    await db.add_load(make_load(rate_amount=2500.0, status=LoadStatus.ACTIVE, delivery_date=today))
+
+    analytics = await db.get_analytics_data()
+
+    assert analytics["total_revenue"] == 0.0
+    assert analytics["weekly_revenue"] == 0.0
+    assert analytics["brokers"] == []
+
+
+async def test_analytics_buckets_by_actual_delivery_date(db):
+    today = date.today()
+    await db.add_load(
+        make_load(
+            rate_amount=2000.0,
+            status=LoadStatus.DELIVERED,
+            delivery_date=date(today.year - 1, 1, 1),
+            actual_delivery_date=today,
+        )
+    )
+
+    analytics = await db.get_analytics_data()
+
+    assert analytics["weekly_revenue"] == 2000.0
+    assert analytics["ytd_revenue"] == 2000.0
+
+
 async def test_analytics_with_no_miles_does_not_divide_by_zero(db):
-    await db.add_load(make_load(loaded_miles=0))
+    await db.add_load(make_load(loaded_miles=0, status=LoadStatus.DELIVERED))
 
     analytics = await db.get_analytics_data()
 
