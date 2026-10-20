@@ -5,12 +5,25 @@ from loadpilot.models import Load, LoadStatus
 
 logger = logging.getLogger("loadpilot.database")
 
+# Columns that update_load may write. Keys are interpolated into SQL, so never widen this to user input.
+UPDATABLE_COLUMNS = frozenset(Load.model_fields) - {"id"}
+
+# Append-only list of schema migrations; entry N upgrades the database to user_version N.
+MIGRATIONS: list[list[str]] = [
+    # 1: invoices get their own column instead of overwriting rate_con_pdf_path
+    [
+        "ALTER TABLE loads ADD COLUMN invoice_pdf_path TEXT",
+        "UPDATE loads SET invoice_pdf_path = rate_con_pdf_path, rate_con_pdf_path = NULL "
+        "WHERE rate_con_pdf_path LIKE 'static/invoices/%'",
+    ],
+]
+
 class DatabaseManager:
     def __init__(self, db_path: str = "loadpilot.db"):
         self.db_path = db_path
 
     async def init_db(self):
-        """Creates the necessary tables for LoadPilot if they don't exist yet."""
+        """Creates the LoadPilot tables if needed, then applies any pending migrations."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS loads (
@@ -39,8 +52,20 @@ class DatabaseManager:
                     value TEXT
                 )
             """)
+            await self._migrate(db)
             await db.commit()
             logger.info("Database initialized successfully.")
+
+    async def _migrate(self, db: aiosqlite.Connection):
+        """Applies each migration newer than the database's PRAGMA user_version, in order."""
+        async with db.execute("PRAGMA user_version") as cursor:
+            current_version = (await cursor.fetchone())[0]
+
+        for version, statements in enumerate(MIGRATIONS[current_version:], start=current_version + 1):
+            for statement in statements:
+                await db.execute(statement)
+            await db.execute(f"PRAGMA user_version = {version}")
+            logger.info(f"Applied database migration {version}.")
 
     # -----------------------------------------
     # SETTINGS (Key-Value Store Pattern)
@@ -87,13 +112,13 @@ class DatabaseManager:
                     invoice_number, broker_name, broker_email, load_reference, 
                     rate_amount, pickup_location, pickup_date, delivery_location, 
                     delivery_date, actual_delivery_date, loaded_miles, status, notes, 
-                    rate_con_pdf_path, bol_pdf_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rate_con_pdf_path, bol_pdf_path, invoice_pdf_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number, load.broker_name, load.broker_email, load.load_reference,
                     load.rate_amount, load.pickup_location, load.pickup_date.isoformat(), load.delivery_location,
                     load.delivery_date.isoformat(), actual_del, load.loaded_miles, load.status.value, load.notes,
-                    load.rate_con_pdf_path, load.bol_pdf_path
+                    load.rate_con_pdf_path, load.bol_pdf_path, load.invoice_pdf_path
                 )
             )
             await db.commit()
@@ -127,7 +152,8 @@ class DatabaseManager:
                 
             if search_query:
                 conditions.append(
-                    "(broker_name LIKE ? OR load_reference LIKE ? OR invoice_number LIKE ? OR pickup_location LIKE ? OR delivery_location LIKE ?)"
+                    "(broker_name LIKE ? OR load_reference LIKE ? OR invoice_number LIKE ? "
+                    "OR pickup_location LIKE ? OR delivery_location LIKE ?)"
                 )
                 search_param = f"%{search_query}%"
                 params.extend([search_param] * 5)
@@ -143,6 +169,10 @@ class DatabaseManager:
     async def update_load(self, load_id: int, update_data: dict[str, str | int | date | LoadStatus]) -> Load | None:
         if not update_data:
             return await self.get_load(load_id)
+
+        unknown_columns = set(update_data) - UPDATABLE_COLUMNS
+        if unknown_columns:
+            raise ValueError(f"Cannot update unknown load fields: {sorted(unknown_columns)}")
 
         set_clauses = []
         params = []
@@ -190,7 +220,8 @@ class DatabaseManager:
             status=LoadStatus(row["status"]),
             notes=row["notes"],
             rate_con_pdf_path=row["rate_con_pdf_path"],
-            bol_pdf_path=row["bol_pdf_path"]
+            bol_pdf_path=row["bol_pdf_path"],
+            invoice_pdf_path=row["invoice_pdf_path"]
         )
 
     async def get_analytics_data(self) -> dict:
@@ -223,7 +254,6 @@ class DatabaseManager:
             
             for row in rows:
                 rate = row["rate_amount"]
-                print(rate)
                 miles = row["loaded_miles"] or 0
                 broker = row["broker_name"]
                 

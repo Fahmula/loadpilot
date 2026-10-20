@@ -1,5 +1,6 @@
+import aiosqlite
 from fastapi import APIRouter, Request, HTTPException
-from loadpilot.models import Load, LoadStatus
+from loadpilot.models import Load, LoadStatus, LoadUpdate
 
 router = APIRouter(prefix="/api/loads", tags=["Loads"])
 
@@ -27,9 +28,12 @@ async def read_load(load_id: int, request: Request):
     return db_load
 
 @router.put("/{load_id}", response_model=Load)
-async def update_load(load_id: int, load_update: dict, request: Request):
+async def update_load(load_id: int, load_update: LoadUpdate, request: Request):
     db = request.app.state.db
-    db_load = await db.update_load(load_id, load_update)
+    try:
+        db_load = await db.update_load(load_id, load_update.model_dump(exclude_unset=True))
+    except aiosqlite.IntegrityError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid load update: {e}") from e
     if not db_load:
         raise HTTPException(status_code=404, detail="Load not found")
     return db_load

@@ -44,8 +44,8 @@
                             <span class="badge bg-warning text-dark">Delivered</span>
                         {% elif load.status == 'Invoiced' %}
                             <span class="badge bg-success">Invoiced</span>
-                            {% if load.rate_con_pdf_path %}
-                            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="d-block small text-decoration-none mt-1" style="font-size: 0.75rem;">
+                            {% if load.invoice_pdf_path %}
+                            <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="d-block small text-decoration-none mt-1" style="font-size: 0.75rem;">
                                 <i class="bi bi-file-pdf text-danger"></i> PDF
                             </a>
                             {% endif %}

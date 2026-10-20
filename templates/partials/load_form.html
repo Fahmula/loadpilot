@@ -5,6 +5,10 @@
             <label class="small text-muted">Broker Name</label>
             <input type="text" name="broker_name" class="form-control" value="{{ data.broker_name or '' }}" required>
         </div>
+        <div class="col-12">
+            <label class="small text-muted">Broker Email</label>
+            <input type="email" name="broker_email" class="form-control" value="{{ data.broker_email or '' }}">
+        </div>
         <div class="col-3">
             <label class="small text-muted">Rate ($)</label>
             <input type="number" step="0.01" name="rate_amount" class="form-control" value="{{ data.rate_amount or '' }}" required>

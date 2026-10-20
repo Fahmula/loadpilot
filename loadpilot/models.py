@@ -1,8 +1,8 @@
-from enum import Enum
+from enum import StrEnum
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-class LoadStatus(str, Enum):
+class LoadStatus(StrEnum):
     DRAFT = "Draft"
     ACTIVE = "Active"
     DELIVERED = "Delivered"
@@ -25,3 +25,22 @@ class Load(BaseModel):
     notes: str | None = None
     rate_con_pdf_path: str | None = None
     bol_pdf_path: str | None = None
+    invoice_pdf_path: str | None = None
+
+class LoadUpdate(BaseModel):
+    """Partial update for a load; only fields the client sends are written."""
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_number: str | None = None
+    broker_name: str | None = None
+    broker_email: str | None = None
+    load_reference: str | None = None
+    rate_amount: float | None = None
+    pickup_location: str | None = None
+    pickup_date: date | None = None
+    delivery_location: str | None = None
+    delivery_date: date | None = None
+    actual_delivery_date: date | None = None
+    loaded_miles: int | None = None
+    status: LoadStatus | None = None
+    notes: str | None = None

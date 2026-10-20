@@ -1,22 +1,24 @@
 import os
+import html
 import uuid
 import shutil
 import asyncio
 import logging
 from datetime import datetime, date
-from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from weasyprint import HTML
 from pathlib import Path
 from dotenv import load_dotenv
 
+from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.models import Load, LoadStatus
 from loadpilot.services import parse_rate_con_with_ai
 
 logger = logging.getLogger("loadpilot.routes.ui")
 router = APIRouter(tags=["UI Views"])
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=Path(__file__).resolve().parents[2] / "templates")
 
 load_dotenv()
 
@@ -74,7 +76,8 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
         
         if not parsed_data:
             return Response(
-                "<div class='alert alert-danger'>AI extraction failed. Please verify your API key in settings and try again.</div>", 
+                "<div class='alert alert-danger'>"
+                "AI extraction failed. Please verify your API key in settings and try again.</div>",
                 status_code=400
             )
             
@@ -85,13 +88,17 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
         )
     except Exception as e:
         logger.error(f"Error parsing document: {e}", exc_info=True)
-        return Response(f"<div class='alert alert-danger'>Internal Processing Error: {str(e)}</div>", status_code=500)
+        return Response(
+            f"<div class='alert alert-danger'>Internal Processing Error: {html.escape(str(e))}</div>",
+            status_code=500,
+        )
 
 @router.get("/manual-load-form/", response_class=HTMLResponse)
 async def manual_load_form(request: Request):
     # Provides structure so templates/partials/load_form.html renders safely with empty values
     empty_data = {
         "broker_name": "",
+        "broker_email": "",
         "rate_amount": "",
         "loaded_miles": 0,
         "load_reference": "",
@@ -111,6 +118,7 @@ async def manual_load_form(request: Request):
 async def create_load_web(
     request: Request,
     broker_name: str = Form(...),
+    broker_email: str = Form(""),
     rate_amount: float = Form(...),
     load_reference: str = Form(...),
     pickup_location: str = Form(...),
@@ -126,6 +134,7 @@ async def create_load_web(
     
     load = Load(
         broker_name=broker_name,
+        broker_email=broker_email.strip() or None,
         rate_amount=rate_amount,
         load_reference=load_reference,
         pickup_location=pickup_location,
@@ -202,19 +211,18 @@ async def save_settings(
         </div>
     """)
 
-from pathlib import Path
-
 @router.post("/generate-invoice/{load_id}")
 async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile = File(...)):
     db = request.app.state.db
     load = await db.get_load(load_id)
+    if not load:
+        raise HTTPException(status_code=404, detail="Load not found")
     settings = await db.get_all_settings()
     
-    bol_dir = Path("/config/bols")
-    invoice_dir = Path("/config/invoices")
-    
-    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{bol_file.filename}"
-    bol_physical_path = bol_dir / bol_filename
+    # Keep only the base name so a crafted filename can't escape the BOL directory
+    original_name = Path(bol_file.filename or "bol").name
+    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{original_name}"
+    bol_physical_path = BOL_DIR / bol_filename
     
     with open(str(bol_physical_path), "wb") as buffer:
         await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
@@ -229,7 +237,7 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     })
     
     pdf_filename = f"invoice_{invoice_num}.pdf"
-    pdf_physical_path = invoice_dir / pdf_filename
+    pdf_physical_path = INVOICE_DIR / pdf_filename
     
     await asyncio.to_thread(HTML(string=html_content).write_pdf, str(pdf_physical_path))
     
@@ -240,7 +248,7 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
         "status": LoadStatus.INVOICED.value,
         "invoice_number": invoice_num,
         "bol_pdf_path": bol_web_path,
-        "rate_con_pdf_path": invoice_web_path
+        "invoice_pdf_path": invoice_web_path
     })
     
     return RedirectResponse(url="/", status_code=303)
