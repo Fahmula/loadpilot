@@ -233,10 +233,15 @@ class DatabaseManager:
         )
 
     async def get_analytics_data(self) -> dict:
-        """Aggregates rates, miles, RPM, and broker data for analytics."""
+        """Aggregates rates, miles, RPM, and broker data for analytics.
+
+        Only loads that have actually been delivered (Delivered or Invoiced) count as earned.
+        """
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM loads WHERE status != 'Draft'") as cursor:
+            async with db.execute(
+                "SELECT * FROM loads WHERE status IN (?, ?)", (LoadStatus.DELIVERED, LoadStatus.INVOICED)
+            ) as cursor:
                 rows = await cursor.fetchall()
 
             today = date.today()
