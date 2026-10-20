@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block nav %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-12 col-sm-8 col-md-5">
+        <div class="text-center mb-4">
+            <img src="/static/icon-192.png" alt="" width="64" height="64" class="rounded-3 shadow-sm mb-3">
+            <h1 class="h4 fw-bold">Sign in to LoadPilot</h1>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                {% if error %}
+                <div class="alert alert-danger small py-2">{{ error }}</div>
+                {% endif %}
+                <form method="post" action="/login">
+                    <input type="hidden" name="next" value="{{ next }}">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Username</label>
+                        <input type="text" name="username" class="form-control" value="{{ username }}" autocomplete="username" autocapitalize="none" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted">Password</label>
+                        <input type="password" name="password" class="form-control" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 fw-bold">
+                        <i class="bi bi-box-arrow-in-right"></i> Sign In
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

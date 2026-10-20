@@ -31,6 +31,12 @@ class Load(BaseModel):
     invoice_pdf_path: str | None = None
 
 
+class User(BaseModel):
+    id: int
+    username: str
+    password_hash: str
+
+
 class LoadUpdate(BaseModel):
     """Partial update for a load; only fields the client sends are written."""
 

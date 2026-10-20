@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 import aiosqlite
 
-from loadpilot.models import Load, LoadStatus
+from loadpilot.models import Load, LoadStatus, User
 
 logger = logging.getLogger("loadpilot.database")
 
@@ -17,6 +17,17 @@ MIGRATIONS: list[list[str]] = [
         "ALTER TABLE loads ADD COLUMN invoice_pdf_path TEXT",
         "UPDATE loads SET invoice_pdf_path = rate_con_pdf_path, rate_con_pdf_path = NULL "
         "WHERE rate_con_pdf_path LIKE 'static/invoices/%'",
+    ],
+    # 2: login account
+    [
+        """
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
     ],
 ]
 
@@ -100,6 +111,45 @@ class DatabaseManager:
                     else:
                         settings[key] = val
                 return settings
+
+    # -----------------------------------------
+    # USERS
+    # -----------------------------------------
+    async def has_users(self) -> bool:
+        async with aiosqlite.connect(self.db_path) as db, db.execute("SELECT 1 FROM users LIMIT 1") as cursor:
+            return await cursor.fetchone() is not None
+
+    async def create_user(self, username: str, password_hash: str) -> User:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, password_hash)
+            )
+            await db.commit()
+            return User(id=cursor.lastrowid, username=username, password_hash=password_hash)
+
+    async def get_user(self, user_id: int) -> User | None:
+        return await self._fetch_user("SELECT id, username, password_hash FROM users WHERE id = ?", user_id)
+
+    async def get_user_by_username(self, username: str) -> User | None:
+        return await self._fetch_user("SELECT id, username, password_hash FROM users WHERE username = ?", username)
+
+    async def list_users(self) -> list[User]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT id, username, password_hash FROM users ORDER BY id") as cursor:
+                return [User(**dict(row)) for row in await cursor.fetchall()]
+
+    async def set_password_hash(self, user_id: int, password_hash: str):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+            await db.commit()
+
+    async def _fetch_user(self, query: str, value: int | str) -> User | None:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, (value,)) as cursor:
+                row = await cursor.fetchone()
+                return User(**dict(row)) if row else None
 
     # -----------------------------------------
     # LOADS PERSISTENCE

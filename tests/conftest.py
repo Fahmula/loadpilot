@@ -32,10 +32,27 @@ async def db(db_path):
     return manager
 
 
+TEST_USERNAME = "driver"
+TEST_PASSWORD = "correct-horse-battery"
+
+
 @pytest.fixture
-def client(db_path):
+def anon_client(db_path):
+    """A client that hasn't logged in."""
     with TestClient(app_module.app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def client(anon_client):
+    """A client signed in to a freshly created account."""
+    response = anon_client.post(
+        "/setup",
+        data={"username": TEST_USERNAME, "password": TEST_PASSWORD, "confirm_password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    return anon_client
 
 
 def make_load(**overrides) -> Load:
