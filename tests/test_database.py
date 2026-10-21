@@ -104,6 +104,39 @@ async def test_migration_moves_invoice_out_of_rate_con_column(tmp_path):
     assert load.rate_con_pdf_path is None
 
 
+async def test_migration_adds_deadhead_columns(tmp_path):
+    """Loads saved before deadhead tracking start with no empty miles."""
+    db_path = tmp_path / "legacy.db"
+    manager = DatabaseManager(db_path=str(db_path))
+    await manager.init_db()
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("ALTER TABLE loads DROP COLUMN empty_miles")
+        await conn.execute("ALTER TABLE loads DROP COLUMN deadhead_origin")
+        await conn.execute("PRAGMA user_version = 4")
+        await conn.execute(
+            "INSERT INTO loads (broker_name, load_reference, rate_amount, pickup_location, pickup_date, "
+            "delivery_location, delivery_date, status) "
+            "VALUES ('Acme', 'PO-1', 1000, 'A', '2026-01-01', 'B', '2026-01-02', 'Active')"
+        )
+        await conn.commit()
+
+    await manager.init_db()
+    load = await manager.get_load(1)
+
+    assert load.empty_miles == 0
+    assert load.deadhead_origin is None
+
+
+async def test_deadhead_fields_round_trip(db):
+    saved = await db.add_load(make_load(empty_miles=85, deadhead_origin="Joliet, IL"))
+
+    fetched = await db.get_load(saved.id)
+
+    assert fetched.empty_miles == 85
+    assert fetched.deadhead_origin == "Joliet, IL"
+    assert fetched.total_miles == 1085
+
+
 async def test_add_load_stamps_created_at(db):
     saved = await db.add_load(make_load())
 

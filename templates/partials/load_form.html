@@ -1,5 +1,5 @@
 {# Review form for a new load, prefilled by AI extraction (or blank for manual entry). #}
-<form id="new-load-form" hx-post="/create-load-web/" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
+<form id="new-load-form" data-last-delivery="{{ last_delivery or '' }}" hx-post="/create-load-web/" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
     <div class="mb-5 flex items-center gap-3">
         <span class="grid size-10 place-items-center rounded-xl bg-success/12 text-success">{{ icon("circle-check", "size-5") }}</span>
         <div>
@@ -49,6 +49,22 @@
     </fieldset>
 
     <fieldset class="fieldset mt-2 gap-3">
+        <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Deadhead</legend>
+        <div class="grid grid-cols-[1fr_auto] gap-3">
+            <label class="floating-label">
+                <span>Starting from (City, ST)</span>
+                <input type="text" name="deadhead_origin" class="input w-full" placeholder="Starting from (City, ST)" value="{{ data.deadhead_origin or '' }}">
+            </label>
+            <button type="button" class="btn btn-square" title="Use my location" aria-label="Use my location" data-locate>{{ icon("map-pin", "size-5") }}</button>
+        </div>
+        <label class="input w-full">
+            <input type="number" min="0" name="empty_miles" placeholder="Empty miles" value="{{ data.empty_miles or 0 }}" data-rpm-empty>
+            <span class="text-sm text-base-content/50">empty mi</span>
+        </label>
+        <p class="text-sm text-base-content/60" data-deadhead-status></p>
+    </fieldset>
+
+    <fieldset class="fieldset mt-2 gap-3">
         <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Pay</legend>
         <div class="grid grid-cols-2 gap-3">
             <label class="input w-full">
@@ -60,7 +76,11 @@
                 <span class="text-sm text-base-content/50">mi</span>
             </label>
         </div>
-        <p class="text-sm text-base-content/60">Rate per mile: <span class="font-semibold text-base-content" data-rpm-output>—</span></p>
+        <p class="text-sm text-base-content/60">
+            Rate per mile: <span class="font-semibold text-base-content" data-rpm-output>—</span>
+            <span class="mx-1 text-base-content/30">·</span>
+            All-in: <span class="font-semibold text-base-content" data-rpm-all-in>—</span>
+        </p>
     </fieldset>
 
     <fieldset class="fieldset mt-2">
@@ -74,17 +94,88 @@
 </form>
 
 <script>
-    // Live rate-per-mile while editing the pay fields
+    // Live rate-per-mile (loaded, and all-in with empty miles) while editing the pay fields
     (function () {
         var form = document.getElementById("new-load-form");
         var rate = form.querySelector("[data-rpm-rate]"), miles = form.querySelector("[data-rpm-miles]");
-        var output = form.querySelector("[data-rpm-output]");
-        function update() {
-            var r = parseFloat(rate.value), m = parseFloat(miles.value);
-            output.textContent = r > 0 && m > 0 ? "$" + (r / m).toFixed(2) + "/mi" : "—";
+        var empty = form.querySelector("[data-rpm-empty]");
+        var output = form.querySelector("[data-rpm-output]"), allIn = form.querySelector("[data-rpm-all-in]");
+        function perMile(r, m) {
+            return r > 0 && m > 0 ? "$" + (r / m).toFixed(2) + "/mi" : "—";
         }
-        rate.addEventListener("input", update);
-        miles.addEventListener("input", update);
+        function update() {
+            var r = parseFloat(rate.value), m = parseFloat(miles.value) || 0, e = parseFloat(empty.value) || 0;
+            output.textContent = perMile(r, m);
+            allIn.textContent = perMile(r, m + e);
+        }
+        [rate, miles, empty].forEach(function (input) { input.addEventListener("input", update); });
         update();
+    })();
+
+    // Deadhead: start from the GPS location (or the last delivery city), estimate empty miles offline
+    (function () {
+        var form = document.getElementById("new-load-form");
+        var origin = form.querySelector("[name=deadhead_origin]"), pickup = form.querySelector("[name=pickup_location]");
+        var empty = form.querySelector("[name=empty_miles]"), status = form.querySelector("[data-deadhead-status]");
+        // Once the driver types empty miles themselves (e.g. from DAT), stop overwriting them
+        var typed = false;
+        empty.addEventListener("input", function (event) {
+            if (event.isTrusted) typed = empty.value !== "";
+        });
+
+        function estimate(note) {
+            var prefix = note ? note + " " : "";
+            if (!origin.value.trim() || !pickup.value.trim()) {
+                status.textContent = note || "";
+                return;
+            }
+            fetch("/geo/estimate?" + new URLSearchParams({ origin: origin.value, destination: pickup.value }))
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (data.miles === null) {
+                        status.textContent = prefix + "Couldn't find that city. Enter empty miles yourself.";
+                        return;
+                    }
+                    status.textContent = prefix + "About " + data.miles + " mi by road from " + origin.value + " (estimate).";
+                    if (!typed) {
+                        empty.value = data.miles;
+                        empty.dispatchEvent(new Event("input"));
+                    }
+                });
+        }
+
+        function fallback(reason) {
+            if (!origin.value.trim() && form.dataset.lastDelivery) {
+                origin.value = form.dataset.lastDelivery;
+                reason += " Starting from your last delivery.";
+            }
+            estimate(reason);
+        }
+
+        function locate(manual) {
+            if (!window.isSecureContext || !navigator.geolocation) {
+                fallback("Location needs HTTPS.");
+                return;
+            }
+            status.textContent = "Finding your location…";
+            navigator.geolocation.getCurrentPosition(function (position) {
+                var coords = { lat: position.coords.latitude, lon: position.coords.longitude };
+                fetch("/geo/nearest?" + new URLSearchParams(coords))
+                    .then(function (response) { return response.ok ? response.json() : Promise.reject(); })
+                    .then(function (data) {
+                        if (manual || !origin.value.trim()) origin.value = data.location;
+                        estimate();
+                    })
+                    .catch(function () { fallback("No US city near your location."); });
+            }, function () {
+                fallback("Couldn't get your location.");
+            }, { timeout: 10000, maximumAge: 600000 });
+        }
+
+        form.querySelector("[data-locate]").addEventListener("click", function () { locate(true); });
+        origin.addEventListener("change", function () { estimate(); });
+        pickup.addEventListener("change", function () { estimate(); });
+        if (origin.value.trim()) estimate();
+        else locate(false);
     })();
 </script>

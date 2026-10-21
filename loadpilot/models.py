@@ -24,6 +24,8 @@ class Load(BaseModel):
     delivery_date: date
     actual_delivery_date: date | None = None
     loaded_miles: int = 0
+    empty_miles: int = 0
+    deadhead_origin: str | None = None
     status: LoadStatus = LoadStatus.DRAFT
     notes: str | None = None
     rate_con_pdf_path: str | None = None
@@ -31,6 +33,11 @@ class Load(BaseModel):
     invoice_pdf_path: str | None = None
     created_at: datetime | None = None
     invoiced_at: datetime | None = None
+
+    @property
+    def total_miles(self) -> int:
+        """Loaded plus empty (deadhead) miles: everything the truck drove for this load."""
+        return (self.loaded_miles or 0) + (self.empty_miles or 0)
 
 
 class User(BaseModel):
@@ -55,5 +62,7 @@ class LoadUpdate(BaseModel):
     delivery_date: date | None = None
     actual_delivery_date: date | None = None
     loaded_miles: int | None = None
+    empty_miles: int | None = None
+    deadhead_origin: str | None = None
     status: LoadStatus | None = None
     notes: str | None = None

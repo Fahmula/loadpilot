@@ -13,6 +13,7 @@ from weasyprint import HTML
 from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
 from loadpilot.analytics import build_analytics, recent_activity
 from loadpilot.config import BOL_DIR, INVOICE_DIR
+from loadpilot.geo import estimate_road_miles, nearest_place
 from loadpilot.models import Load, LoadStatus
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
@@ -27,6 +28,12 @@ async def get_load_or_404(db, load_id: int) -> Load:
     if not load:
         raise HTTPException(status_code=404, detail="Load not found")
     return load
+
+
+async def last_delivery(db) -> str:
+    """Where the newest load delivers: the usual start of the next load's deadhead."""
+    recent = await db.get_recent_loads(limit=1)
+    return recent[0].delivery_location if recent else ""
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -99,7 +106,8 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
         logger.error(f"Error parsing document: {e}", exc_info=True)
         return alert_response(f"Internal processing error: {e}", status_code=500)
 
-    return templates.TemplateResponse(request=request, name="partials/load_form.html", context={"data": parsed_data})
+    context = {"data": parsed_data, "last_delivery": await last_delivery(request.app.state.db)}
+    return templates.TemplateResponse(request=request, name="partials/load_form.html", context=context)
 
 
 @router.get("/manual-load-form/", response_class=HTMLResponse)
@@ -110,6 +118,8 @@ async def manual_load_form(request: Request):
         "broker_email": "",
         "rate_amount": "",
         "loaded_miles": 0,
+        "empty_miles": 0,
+        "deadhead_origin": "",
         "load_reference": "",
         "pickup_location": "",
         "pickup_date": "",
@@ -117,7 +127,21 @@ async def manual_load_form(request: Request):
         "delivery_date": "",
         "notes": "",
     }
-    return templates.TemplateResponse(request=request, name="partials/load_form.html", context={"data": empty_data})
+    context = {"data": empty_data, "last_delivery": await last_delivery(request.app.state.db)}
+    return templates.TemplateResponse(request=request, name="partials/load_form.html", context=context)
+
+
+@router.get("/geo/nearest")
+async def geo_nearest(lat: float, lon: float):
+    place = nearest_place(lat, lon)
+    if not place:
+        raise HTTPException(status_code=404, detail="No known city near this location")
+    return {"location": place.label}
+
+
+@router.get("/geo/estimate")
+async def geo_estimate(origin: str = "", destination: str = ""):
+    return {"miles": estimate_road_miles(origin, destination)}
 
 
 @router.post("/create-load-web/")
@@ -132,6 +156,8 @@ async def create_load_web(
     delivery_location: str = Form(...),
     delivery_date: str = Form(...),
     loaded_miles: int = Form(...),
+    empty_miles: int = Form(0),
+    deadhead_origin: str = Form(""),
     notes: str = Form(None),
 ):
     db = request.app.state.db
@@ -148,6 +174,8 @@ async def create_load_web(
         delivery_location=delivery_location,
         delivery_date=d_date,
         loaded_miles=loaded_miles,
+        empty_miles=empty_miles,
+        deadhead_origin=deadhead_origin.strip() or None,
         notes=notes,
         status=LoadStatus.ACTIVE,
     )

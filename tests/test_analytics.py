@@ -10,9 +10,14 @@ from .conftest import make_load
 TODAY = date(2026, 10, 20)  # a Tuesday
 
 
-def delivered(day: date, rate: float = 1000.0, miles: int = 500, broker: str = "Acme Logistics"):
+def delivered(day: date, rate: float = 1000.0, miles: int = 500, broker: str = "Acme Logistics", empty: int = 0):
     return make_load(
-        status=LoadStatus.DELIVERED, actual_delivery_date=day, rate_amount=rate, loaded_miles=miles, broker_name=broker
+        status=LoadStatus.DELIVERED,
+        actual_delivery_date=day,
+        rate_amount=rate,
+        loaded_miles=miles,
+        empty_miles=empty,
+        broker_name=broker,
     )
 
 
@@ -93,3 +98,24 @@ def test_recent_activity_is_newest_first():
 
     assert [e["kind"] for e in events] == ["added", "invoiced", "delivered", "added"]
     assert len(recent_activity([added, invoiced], limit=2)) == 2
+
+
+def test_all_in_rpm_counts_empty_miles():
+    loads = [
+        delivered(date(2026, 10, 2), rate=3000, miles=1000, empty=200),
+        delivered(date(2026, 10, 15), rate=1000, miles=500, empty=300),
+    ]
+
+    current = build_analytics(loads, "month", TODAY)["current"]
+
+    assert current.rpm == pytest.approx(4000 / 1500)
+    assert current.empty_miles == 500
+    assert current.all_in_rpm == pytest.approx(2.0)
+    assert current.deadhead_pct == pytest.approx(25.0)
+
+
+def test_all_in_rpm_without_miles_is_zero():
+    current = build_analytics([], "month", TODAY)["current"]
+
+    assert current.all_in_rpm == 0.0
+    assert current.deadhead_pct == 0.0

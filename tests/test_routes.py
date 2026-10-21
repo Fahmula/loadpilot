@@ -69,6 +69,49 @@ def test_create_load_from_form_keeps_broker_email(client):
     assert load["notes"] == "PU# 5521"
 
 
+def test_create_load_saves_deadhead(client):
+    client.post("/create-load-web/", data={**LOAD_FORM, "empty_miles": "120", "deadhead_origin": " Waco, TX "})
+
+    load = client.get("/api/loads/").json()[0]
+    assert load["empty_miles"] == 120
+    assert load["deadhead_origin"] == "Waco, TX"
+
+
+def test_create_load_without_deadhead_defaults_to_zero(client):
+    client.post("/create-load-web/", data=LOAD_FORM)
+
+    load = client.get("/api/loads/").json()[0]
+    assert load["empty_miles"] == 0
+    assert load["deadhead_origin"] is None
+
+
+def test_manual_form_offers_last_delivery_as_deadhead_start(client, db_path):
+    seed(db_path, delivery_location="Memphis, TN")
+
+    html = client.get("/manual-load-form/").text
+
+    assert 'name="deadhead_origin"' in html
+    assert 'name="empty_miles"' in html
+    assert 'data-last-delivery="Memphis, TN"' in html
+
+
+def test_geo_nearest(client):
+    assert client.get("/geo/nearest", params={"lat": 32.7767, "lon": -96.797}).json() == {"location": "Dallas, TX"}
+    assert client.get("/geo/nearest", params={"lat": 30, "lon": -40}).status_code == 404
+
+
+def test_geo_estimate(client):
+    miles = client.get("/geo/estimate", params={"origin": "Dallas, TX", "destination": "Houston, TX"}).json()["miles"]
+    assert 240 <= miles <= 300
+    unknown = client.get("/geo/estimate", params={"origin": "Nowhere, ZZ", "destination": "Houston, TX"}).json()
+    assert unknown == {"miles": None}
+
+
+def test_geo_requires_login(anon_client):
+    response = anon_client.get("/geo/estimate", follow_redirects=False)
+    assert response.status_code in (303, 401)
+
+
 def test_mark_delivered_sets_actual_delivery_date(client, db_path):
     load = seed(db_path)
 
