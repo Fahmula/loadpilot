@@ -15,15 +15,28 @@ TOP_BROKERS = 5
 class Totals:
     revenue: float = 0.0
     miles: int = 0
+    empty_miles: int = 0
     loads: int = 0
 
     @property
     def rpm(self) -> float:
         return self.revenue / self.miles if self.miles else 0.0
 
+    @property
+    def all_in_rpm(self) -> float:
+        """Revenue per mile driven, counting the empty miles to each pickup."""
+        total = self.miles + self.empty_miles
+        return self.revenue / total if total else 0.0
+
+    @property
+    def deadhead_pct(self) -> float:
+        total = self.miles + self.empty_miles
+        return self.empty_miles / total * 100 if total else 0.0
+
     def add(self, load: Load):
         self.revenue += load.rate_amount
         self.miles += load.loaded_miles or 0
+        self.empty_miles += load.empty_miles or 0
         self.loads += 1
 
 
@@ -114,6 +127,7 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
             "revenue": percent_change(current.revenue, previous.revenue) if has_comparison else None,
             "miles": percent_change(current.miles, previous.miles) if has_comparison else None,
             "rpm": percent_change(current.rpm, previous.rpm) if has_comparison else None,
+            "all_in_rpm": percent_change(current.all_in_rpm, previous.all_in_rpm) if has_comparison else None,
             "loads": percent_change(current.loads, previous.loads) if has_comparison else None,
         },
         "trend": trend,

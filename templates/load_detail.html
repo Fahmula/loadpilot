@@ -30,6 +30,9 @@
             {{ stat("Rate", load.rate_amount | money, "text-success") }}
             {{ stat("Loaded Miles", load.loaded_miles | miles) }}
             {{ stat("RPM", rpm(load.rate_amount, load.loaded_miles)) }}
+            {{ stat("Empty Miles", load.empty_miles | miles) }}
+            {{ stat("All-in RPM", rpm(load.rate_amount, load.total_miles)) }}
+            {{ stat("Deadhead From", load.deadhead_origin or "—") }}
         </div>
     </section>
 

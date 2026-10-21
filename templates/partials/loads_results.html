@@ -37,7 +37,7 @@
         <div class="mt-3 grid grid-cols-2 gap-y-2 text-xs text-base-content/60">
             <span class="flex items-center gap-1.5">{{ icon("calendar", "size-4") }} P: {{ load.pickup_date | short_date }}</span>
             <span class="flex items-center gap-1.5">{{ icon("calendar", "size-4") }} D: {{ (load.actual_delivery_date or load.delivery_date) | short_date }}</span>
-            <span class="flex items-center gap-1.5">{{ icon("route", "size-4") }} {{ load.loaded_miles | miles }}</span>
+            <span class="flex items-center gap-1.5">{{ icon("route", "size-4") }} {{ load.loaded_miles | miles }}{% if load.empty_miles %} <span class="text-base-content/40">+{{ load.empty_miles }} empty</span>{% endif %}</span>
             <span class="flex items-center gap-4">
                 <span class="flex items-center gap-1.5">{{ icon("chart-line", "size-4") }} {{ rpm(load.rate_amount, load.loaded_miles) }}</span>
                 {% if files %}<span class="flex items-center gap-1.5">{{ icon("file", "size-4") }} {{ files }} file{{ "s" if files > 1 }}</span>{% endif %}
