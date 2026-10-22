@@ -495,6 +495,35 @@ def test_edit_missing_load_is_404(client):
     assert client.post("/loads/999/edit", data=LOAD_FORM).status_code == 404
 
 
+def test_load_form_suggests_known_brokers(client, db_path):
+    seed(db_path, broker_name="TQL", broker_email="loads@tql.example")
+
+    html = client.get("/manual-load-form/").text
+
+    assert '<option value="TQL"></option>' in html
+    assert '"tql": {"email": "loads@tql.example", "name": "TQL"}' in html
+
+
+def test_broker_names_cannot_break_out_of_the_form_script(client, db_path):
+    seed(db_path, broker_name="</script><script>alert(1)</script>")
+
+    html = client.get("/manual-load-form/").text
+
+    assert "</script><script>alert(1)" not in html
+
+
+def test_scanned_rate_con_uses_known_broker(client, db_path, monkeypatch):
+    seed(db_path, broker_name="C.H. Robinson", broker_email="carriers@chr.example")
+    configure_ai(client)
+    scanned = {**LOAD_FORM, "broker_name": "CH Robinson Company", "broker_email": ""}
+    monkeypatch.setattr(ui, "extract_rate_con", lambda ai, model, pages: scanned)
+
+    html = client.post("/parse-rate-con-html/", files={"files": ("rc.png", b"img", "image/png")}).text
+
+    assert 'value="C.H. Robinson"' in html
+    assert 'value="carriers@chr.example"' in html
+
+
 def test_parse_rate_con_uses_suggested_model_when_none_chosen(client, monkeypatch):
     configure_ai(client, model="")
     monkeypatch.setattr(ui, "list_models", lambda provider, key: [Model("gemini-9-flash", "Gemini 9 Flash")])

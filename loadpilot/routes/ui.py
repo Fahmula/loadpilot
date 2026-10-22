@@ -12,6 +12,7 @@ from weasyprint import HTML
 
 from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
 from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables, recent_activity
+from loadpilot.brokers import apply_known_broker, known_brokers
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.documents import claim_pending, save_for_load, save_pending
 from loadpilot.geo import estimate_road_miles, nearest_place
@@ -29,6 +30,16 @@ async def get_load_or_404(db, load_id: int) -> Load:
     if not load:
         raise HTTPException(status_code=404, detail="Load not found")
     return load
+
+
+async def form_context(db, data) -> dict:
+    """What the load form needs besides the load itself: broker autofill and the deadhead fallback start."""
+    brokers = known_brokers(await db.get_broker_contacts())
+    return {
+        "data": data,
+        "brokers": {key: {"name": b.name, "email": b.email or ""} for key, b in brokers.items()},
+        "last_delivery": await last_delivery(db),
+    }
 
 
 async def last_delivery(db) -> str:
@@ -115,11 +126,9 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
         logger.error(f"Error parsing document: {e}", exc_info=True)
         return alert_response(f"Internal processing error: {e}", status_code=500)
 
-    context = {
-        "data": parsed_data,
-        "rate_con_file": rate_con_file,
-        "last_delivery": await last_delivery(request.app.state.db),
-    }
+    db = request.app.state.db
+    parsed_data = apply_known_broker(parsed_data, known_brokers(await db.get_broker_contacts()))
+    context = {**await form_context(db, parsed_data), "rate_con_file": rate_con_file}
     return templates.TemplateResponse(request=request, name="partials/load_form.html", context=context)
 
 
@@ -140,7 +149,7 @@ async def manual_load_form(request: Request):
         "delivery_date": "",
         "notes": "",
     }
-    context = {"data": empty_data, "last_delivery": await last_delivery(request.app.state.db)}
+    context = await form_context(request.app.state.db, empty_data)
     return templates.TemplateResponse(request=request, name="partials/load_form.html", context=context)
 
 
@@ -201,8 +210,10 @@ async def create_load_web(request: Request, fields: dict = Depends(load_form), r
 
 @router.get("/loads/{load_id}/edit", response_class=HTMLResponse)
 async def edit_load_page(request: Request, load_id: int):
-    load = await get_load_or_404(request.app.state.db, load_id)
-    return templates.TemplateResponse(request=request, name="load_edit.html", context={"data": load, "load": load})
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    context = {**await form_context(db, load), "load": load}
+    return templates.TemplateResponse(request=request, name="load_edit.html", context=context)
 
 
 @router.post("/loads/{load_id}/edit")
