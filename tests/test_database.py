@@ -195,6 +195,37 @@ async def test_broker_contacts_newest_first(db):
     assert await db.get_broker_contacts() == [("TQL", "loads@tql.example"), ("Echo", None)]
 
 
+async def test_stops_round_trip_and_search(db):
+    stops = [
+        {"kind": "pickup", "location": "Waco, TX", "stop_date": "2026-10-02"},
+        {"kind": "delivery", "location": "Macon, GA"},
+    ]
+    saved = await db.add_load(make_load(stops=stops))
+
+    fetched = await db.get_load(saved.id)
+
+    assert [(stop.kind, stop.location, stop.stop_date) for stop in fetched.stops] == [
+        ("pickup", "Waco, TX", date(2026, 10, 2)),
+        ("delivery", "Macon, GA", None),
+    ]
+    assert [load.id for load in await db.get_loads(search_query="Macon")] == [saved.id]
+
+
+async def test_migration_gives_existing_loads_no_stops(tmp_path, monkeypatch):
+    manager = await legacy_database(tmp_path, monkeypatch, version=7)
+    async with aiosqlite.connect(manager.db_path) as conn:
+        await conn.execute(
+            "INSERT INTO loads (broker_name, load_reference, rate_amount, pickup_location, pickup_date, "
+            "delivery_location, delivery_date, status) "
+            "VALUES ('Acme', 'PO-1', 1000, 'A', '2026-01-01', 'B', '2026-01-02', 'Active')"
+        )
+        await conn.commit()
+
+    await manager.init_db()
+
+    assert (await manager.get_load(1)).stops == []
+
+
 async def test_add_load_stamps_created_at(db):
     saved = await db.add_load(make_load())
 

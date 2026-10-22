@@ -24,9 +24,12 @@
             {% if labels %}<div class="text-xs text-base-content/60">Pickup</div>{% endif %}
         </div>
     </div>
-    <div class="flex shrink-0 items-center text-base-content/40" aria-hidden="true">
-        <span class="w-5 border-t-2 border-dotted border-current sm:w-8"></span>
-        {{ icon("chevron-right", "-ml-1 size-4") }}
+    <div class="flex shrink-0 flex-col items-center">
+        <div class="flex items-center text-base-content/40" aria-hidden="true">
+            <span class="w-5 border-t-2 border-dotted border-current sm:w-8"></span>
+            {{ icon("chevron-right", "-ml-1 size-4") }}
+        </div>
+        {% if load.stops %}<span class="whitespace-nowrap text-xs font-medium text-base-content/60">+{{ load.stops | length }} stop{{ "s" if load.stops | length > 1 }}</span>{% endif %}
     </div>
     <div class="flex min-w-0 flex-1 items-start gap-1.5">
         {{ icon("map-pin", "mt-0.5 size-5 shrink-0 text-success") }}

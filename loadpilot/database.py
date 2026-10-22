@@ -3,8 +3,9 @@ import logging
 from datetime import date, datetime
 
 import aiosqlite
+from pydantic import BaseModel
 
-from loadpilot.models import Charge, Load, LoadStatus, User
+from loadpilot.models import Charge, Load, LoadStatus, Stop, User
 
 logger = logging.getLogger("loadpilot.database")
 
@@ -55,11 +56,20 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE loads ADD COLUMN charges TEXT NOT NULL DEFAULT '[]'",
     ],
+    # 8: stops between the first pickup and the final delivery, as a JSON list of {kind, location, stop_date}
+    [
+        "ALTER TABLE loads ADD COLUMN stops TEXT NOT NULL DEFAULT '[]'",
+    ],
 ]
 
 
-def charges_json(charges: list[Charge | dict]) -> str:
-    return json.dumps([Charge.model_validate(charge).model_dump() for charge in charges])
+# Load fields stored as a JSON list of models
+JSON_COLUMNS: dict[str, type[BaseModel]] = {"charges": Charge, "stops": Stop}
+
+
+def json_list(column: str, items: list | None) -> str:
+    model = JSON_COLUMNS[column]
+    return json.dumps([model.model_validate(item).model_dump(mode="json") for item in items or []])
 
 
 class DatabaseManager:
@@ -194,8 +204,8 @@ class DatabaseManager:
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, empty_miles, deadhead_origin, status,
                     notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at, paid_at,
-                    amount_paid, charges
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    amount_paid, charges, stops
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -219,7 +229,8 @@ class DatabaseManager:
                     load.invoiced_at.isoformat() if load.invoiced_at else None,
                     load.paid_at.isoformat() if load.paid_at else None,
                     load.amount_paid,
-                    charges_json(load.charges),
+                    json_list("charges", load.charges),
+                    json_list("stops", load.stops),
                 ),
             )
             await db.commit()
@@ -250,10 +261,10 @@ class DatabaseManager:
             if search_query:
                 conditions.append(
                     "(broker_name LIKE ? OR load_reference LIKE ? OR invoice_number LIKE ? "
-                    "OR pickup_location LIKE ? OR delivery_location LIKE ?)"
+                    "OR pickup_location LIKE ? OR delivery_location LIKE ? OR stops LIKE ?)"
                 )
                 search_param = f"%{search_query}%"
-                params.extend([search_param] * 5)
+                params.extend([search_param] * 6)
 
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             query = f"SELECT * FROM loads {where_clause} ORDER BY pickup_date DESC LIMIT ? OFFSET ?"
@@ -279,8 +290,8 @@ class DatabaseManager:
                 params.append(val.isoformat())
             elif isinstance(val, LoadStatus):
                 params.append(val.value)
-            elif key == "charges":
-                params.append(charges_json(val or []))
+            elif key in JSON_COLUMNS:
+                params.append(json_list(key, val))
             else:
                 params.append(val)
 
@@ -328,6 +339,7 @@ class DatabaseManager:
             paid_at=date.fromisoformat(row["paid_at"]) if row["paid_at"] else None,
             amount_paid=row["amount_paid"],
             charges=json.loads(row["charges"]),
+            stops=json.loads(row["stops"]),
         )
 
     async def get_earned_loads(self) -> list[Load]:

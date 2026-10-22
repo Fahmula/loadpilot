@@ -13,6 +13,17 @@
     <!-- Route & pay -->
     <section class="card-soft p-5">
         {{ route(load, labels=True) }}
+        {% if load.stops %}
+        <ol class="mt-4 space-y-2.5 rounded-xl bg-base-200/60 p-3 text-sm">
+            {% for kind, location, day in load.route_stops %}
+            <li class="flex items-center gap-3">
+                <span class="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold {{ 'bg-primary/12 text-primary' if kind == 'pickup' else 'bg-success/12 text-success' }}">{{ loop.index }}</span>
+                <span class="min-w-0 flex-1 truncate"><span class="text-base-content/60">{{ "Pickup" if kind == "pickup" else "Drop" }}</span> <span class="font-semibold">{{ location }}</span></span>
+                <span class="shrink-0 text-xs text-base-content/60">{{ day | short_date(False) if day else "" }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% endif %}
         <div class="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-base-200/60 p-3 text-sm">
             <div class="flex items-center gap-2">
                 {{ icon("calendar", "size-4 text-base-content/50") }}

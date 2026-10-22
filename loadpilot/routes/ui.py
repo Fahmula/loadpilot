@@ -16,7 +16,7 @@ from loadpilot.brokers import apply_known_broker, known_brokers
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.documents import claim_pending, save_for_load, save_pending
 from loadpilot.geo import estimate_road_miles, nearest_place
-from loadpilot.models import Charge, Load, LoadStatus
+from loadpilot.models import Charge, Load, LoadStatus, Stop
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
 logger = logging.getLogger("loadpilot.routes.ui")
@@ -147,6 +147,7 @@ async def manual_load_form(request: Request):
         "pickup_date": "",
         "delivery_location": "",
         "delivery_date": "",
+        "stops": [],
         "notes": "",
     }
     context = await form_context(request.app.state.db, empty_data)
@@ -179,8 +180,20 @@ def load_form(
     empty_miles: int = Form(0),
     deadhead_origin: str = Form(""),
     notes: str = Form(""),
+    stop_kind: list[str] = Form([]),
+    stop_location: list[str] = Form([]),
+    stop_date: list[str] = Form([]),
 ) -> dict:
     """The load fields shared by the add and edit forms (templates/partials/load_form.html)."""
+    # Each extra stop is a row of three same-named inputs; rows left without a city are dropped
+    try:
+        stops = [
+            Stop(kind=kind, location=location.strip(), stop_date=day or None)
+            for kind, location, day in zip(stop_kind, stop_location, stop_date, strict=True)
+            if location.strip()
+        ]
+    except ValueError as e:  # a mismatched row, unknown stop type or bad date
+        raise HTTPException(status_code=422, detail="Check the extra stops") from e
     return {
         "broker_name": broker_name,
         "broker_email": broker_email.strip() or None,
@@ -194,6 +207,7 @@ def load_form(
         "empty_miles": empty_miles,
         "deadhead_origin": deadhead_origin.strip() or None,
         "notes": notes or None,
+        "stops": stops,
     }
 
 

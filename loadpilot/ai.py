@@ -74,10 +74,12 @@ EXTRACTION_FIELDS = """{
     "broker_email": "String or null if not found",
     "load_reference": "String (load number, PO number, or order number)",
     "rate_amount": 0.0 (number only, no commas or dollar signs; the total pay for the load),
-    "pickup_location": "String (City, ST)",
+    "pickup_location": "String (City, ST of the first pickup)",
     "pickup_date": "YYYY-MM-DD",
-    "delivery_location": "String (City, ST)",
+    "delivery_location": "String (City, ST of the final delivery)",
     "delivery_date": "YYYY-MM-DD",
+    "extra_stops": [{"type": "pickup or delivery", "location": "City, ST", "date": "YYYY-MM-DD or null"}] (every stop
+        between the first pickup and the final delivery, in route order; [] for a single pickup and delivery),
     "loaded_miles": 0 (integer; look for 'Miles' or 'Loaded Miles', 0 if not found),
     "notes": "String (pickup/delivery numbers, appointment times and instructions; null if none)"
 }"""
@@ -333,8 +335,27 @@ def normalize_extraction(data: dict) -> dict:
         "delivery_location": _clean_text(data.get("delivery_location")),
         "delivery_date": _clean_date(data.get("delivery_date")),
         "loaded_miles": int(miles) if miles and miles > 0 else 0,
+        "stops": _clean_stops(data.get("extra_stops")),
         "notes": _clean_text(data.get("notes")),
     }
+
+
+def _clean_stops(value) -> list[dict]:
+    """Stops with a location, as the load form expects them; a "drop" or "consignee" counts as a delivery."""
+    stops = []
+    for stop in value if isinstance(value, list) else []:
+        if not isinstance(stop, dict) or not _clean_text(stop.get("location")):
+            continue
+        kind = _clean_text(stop.get("type")).lower()
+        delivery = kind.startswith(("deliver", "drop", "consignee", "receiver", "unload"))
+        stops.append(
+            {
+                "kind": "delivery" if delivery else "pickup",
+                "location": _clean_text(stop.get("location")),
+                "stop_date": _clean_date(stop.get("date")),
+            }
+        )
+    return stops
 
 
 # -----------------------------------------
