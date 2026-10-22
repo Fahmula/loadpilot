@@ -82,6 +82,7 @@ app.mount("/static/invoices", StaticFiles(directory=INVOICE_DIR), name="invoices
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 app.include_router(api.router)
+app.include_router(api.payments_router)
 app.include_router(auth.router)
 app.include_router(settings.router)
 app.include_router(ui.router)

@@ -1,6 +1,7 @@
 import asyncio
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from loadpilot.ai import AIError, Model
 from loadpilot.config import BOL_DIR, INVOICE_DIR, RATECON_DIR
@@ -183,6 +184,114 @@ def test_generate_invoice(client, db_path):
     bol_path = (BOL_DIR / invoiced["bol_pdf_path"].removeprefix("static/bols/")).resolve()
     assert bol_path.parent == BOL_DIR.resolve()
     assert client.get("/" + invoiced["invoice_pdf_path"]).status_code == 200
+
+
+def test_invoice_shows_terms_and_due_date(client, db_path, monkeypatch):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+    client.post("/settings/section/bank", data={"payment_terms_days": "15"})
+    rendered = []
+
+    class FakeHTML:
+        def __init__(self, string):
+            rendered.append(string)
+
+        def write_pdf(self, path):
+            Path(path).write_bytes(b"%PDF")
+
+    monkeypatch.setattr(ui, "HTML", FakeHTML)
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+
+    assert "Net 15" in rendered[0]
+    assert (date.today() + timedelta(days=15)).strftime("%b %d, %Y") in rendered[0]
+
+
+def invoiced_load(db_path, days_ago: int, **overrides):
+    sent = datetime.now().replace(microsecond=0) - timedelta(days=days_ago)
+    fields = {"status": LoadStatus.INVOICED, "invoice_number": "INV-1001", "invoiced_at": sent, **overrides}
+    return seed(db_path, **fields)
+
+
+def test_mark_paid_records_date_and_amount(client, db_path):
+    load = invoiced_load(db_path, days_ago=5)
+    assert "Mark Paid" in client.get(f"/loads/{load.id}").text
+
+    response = client.post(
+        f"/loads/{load.id}/paid", data={"paid_at": "2026-10-20", "amount_paid": "2450"}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    paid = client.get(f"/api/loads/{load.id}").json()
+    assert (paid["status"], paid["paid_at"], paid["amount_paid"]) == ("Paid", "2026-10-20", 2450)
+    detail = client.get(f"/loads/{load.id}").text
+    assert "Paid $2,450.00" in detail
+    assert "$50.00 less than" in detail  # the quick-pay fee is visible
+
+
+def test_only_invoiced_loads_can_be_marked_paid(client, db_path):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+    invoiced = invoiced_load(db_path, days_ago=1)
+
+    def pay(load_id, amount="1"):
+        return client.post(f"/loads/{load_id}/paid", data={"paid_at": "2026-10-20", "amount_paid": amount})
+
+    assert pay(load.id).status_code == 409
+    assert pay(invoiced.id, amount="0").status_code == 422
+    assert pay(999).status_code == 404
+
+
+def test_undo_paid(client, db_path):
+    load = invoiced_load(db_path, days_ago=1, status=LoadStatus.PAID, paid_at=date(2026, 10, 1), amount_paid=2500.0)
+
+    client.post(f"/loads/{load.id}/unpaid")
+
+    reverted = client.get(f"/api/loads/{load.id}").json()
+    assert (reverted["status"], reverted["paid_at"], reverted["amount_paid"]) == ("Invoiced", None, None)
+
+
+def test_overdue_invoice_is_flagged_everywhere(client, db_path):
+    load = invoiced_load(db_path, days_ago=40)
+
+    assert "10 days overdue" in client.get(f"/loads/{load.id}").text
+    dashboard = client.get("/").text
+    assert "Awaiting Payment" in dashboard
+    assert "1 invoice past net 30" in dashboard
+    assert "10d overdue" in client.get("/loads").text
+
+
+def test_invoice_within_terms_shows_due_date(client, db_path):
+    load = invoiced_load(db_path, days_ago=5)
+    due = (date.today() + timedelta(days=25)).strftime("%b %-d, %Y")
+
+    assert f"Payment due {due} (net 30)" in client.get(f"/loads/{load.id}").text
+    assert "overdue" not in client.get("/").text
+
+
+def test_payment_terms_setting_changes_overdue(client, db_path):
+    load = invoiced_load(db_path, days_ago=20)
+    client.post("/settings/section/bank", data={"payment_terms_days": "15", "bank_name": ""})
+
+    assert "Net 15" in client.get("/settings").text
+    assert "5 days overdue" in client.get(f"/loads/{load.id}").text
+
+
+def test_payment_api_matches_by_invoice_number(client, db_path):
+    load = invoiced_load(db_path, days_ago=3, invoice_number="INV-1042")
+
+    response = client.post("/api/payments/", json={"invoice_number": "INV-1042", "amount": 2450.0})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == load.id
+    assert response.json()["status"] == "Paid"
+    assert response.json()["paid_at"] == date.today().isoformat()
+    # Reporting the same payment twice doesn't overwrite it
+    assert client.post("/api/payments/", json={"invoice_number": "INV-1042", "amount": 1.0}).status_code == 409
+    assert client.post("/api/payments/", json={"invoice_number": "INV-0000", "amount": 1.0}).status_code == 404
+    assert client.post("/api/payments/", json={"invoice_number": "INV-1042", "amount": 0}).status_code == 422
+
+
+def test_payment_api_requires_login(anon_client):
+    response = anon_client.post("/api/payments/", json={"invoice_number": "INV-1", "amount": 1.0})
+    assert response.status_code == 401
 
 
 def configure_ai(client, provider="gemini", api_key="test-key-1234", model="test-model"):

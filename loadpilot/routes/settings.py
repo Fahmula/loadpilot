@@ -14,7 +14,7 @@ Section = Literal["company", "ai", "bank"]
 # Which settings keys the simple cards edit (the AI card has its own handler)
 SECTION_FIELDS = {
     "company": ("company_name", "street_address", "city_state_zip"),
-    "bank": ("bank_name", "account_number", "routing_number"),
+    "bank": ("payment_terms_days", "bank_name", "account_number", "routing_number"),
 }
 TOGGLES = frozenset({"show_address_on_invoice", "show_bank_on_invoice"})
 

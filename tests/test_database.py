@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 
 import aiosqlite
 import pytest
 
+from loadpilot import database
 from loadpilot.database import MIGRATIONS, DatabaseManager
 from loadpilot.models import LoadStatus
 
@@ -104,15 +105,19 @@ async def test_migration_moves_invoice_out_of_rate_con_column(tmp_path):
     assert load.rate_con_pdf_path is None
 
 
-async def test_migration_adds_deadhead_columns(tmp_path):
+async def legacy_database(tmp_path, monkeypatch, version: int) -> DatabaseManager:
+    """A database as it was at schema version N, before the later migrations existed."""
+    manager = DatabaseManager(db_path=str(tmp_path / "legacy.db"))
+    with monkeypatch.context() as patch:
+        patch.setattr(database, "MIGRATIONS", MIGRATIONS[:version])
+        await manager.init_db()
+    return manager
+
+
+async def test_migration_adds_deadhead_columns(tmp_path, monkeypatch):
     """Loads saved before deadhead tracking start with no empty miles."""
-    db_path = tmp_path / "legacy.db"
-    manager = DatabaseManager(db_path=str(db_path))
-    await manager.init_db()
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute("ALTER TABLE loads DROP COLUMN empty_miles")
-        await conn.execute("ALTER TABLE loads DROP COLUMN deadhead_origin")
-        await conn.execute("PRAGMA user_version = 4")
+    manager = await legacy_database(tmp_path, monkeypatch, version=4)
+    async with aiosqlite.connect(manager.db_path) as conn:
         await conn.execute(
             "INSERT INTO loads (broker_name, load_reference, rate_amount, pickup_location, pickup_date, "
             "delivery_location, delivery_date, status) "
@@ -137,6 +142,26 @@ async def test_deadhead_fields_round_trip(db):
     assert fetched.total_miles == 1085
 
 
+async def test_payment_fields_round_trip(db):
+    saved = await db.add_load(
+        make_load(status=LoadStatus.PAID, invoice_number="INV-1001", paid_at=date(2026, 10, 20), amount_paid=2450.0)
+    )
+
+    fetched = await db.get_load_by_invoice_number("INV-1001")
+
+    assert fetched.id == saved.id
+    assert (fetched.paid_at, fetched.amount_paid) == (date(2026, 10, 20), 2450.0)
+    assert await db.get_load_by_invoice_number("INV-9999") is None
+
+
+async def test_unpaid_invoices_oldest_first(db):
+    newer = await db.add_load(make_load(status=LoadStatus.INVOICED, invoiced_at=datetime(2026, 10, 9)))
+    older = await db.add_load(make_load(status=LoadStatus.INVOICED, invoiced_at=datetime(2026, 9, 9)))
+    await db.add_load(make_load(status=LoadStatus.PAID, invoiced_at=datetime(2026, 8, 9)))
+
+    assert [load.id for load in await db.get_unpaid_invoices()] == [older.id, newer.id]
+
+
 async def test_add_load_stamps_created_at(db):
     saved = await db.add_load(make_load())
 
@@ -150,7 +175,7 @@ async def test_get_earned_loads_only_returns_delivered_and_invoiced(db):
 
     earned = await db.get_earned_loads()
 
-    assert sorted(load.broker_name for load in earned) == ["Delivered", "Invoiced"]
+    assert sorted(load.broker_name for load in earned) == ["Delivered", "Invoiced", "Paid"]
 
 
 async def test_count_loads_by_status(db):
@@ -160,7 +185,13 @@ async def test_count_loads_by_status(db):
 
     counts = await db.count_loads_by_status()
 
-    assert counts == {LoadStatus.DRAFT: 0, LoadStatus.ACTIVE: 2, LoadStatus.DELIVERED: 0, LoadStatus.INVOICED: 1}
+    assert counts == {
+        LoadStatus.DRAFT: 0,
+        LoadStatus.ACTIVE: 2,
+        LoadStatus.DELIVERED: 0,
+        LoadStatus.INVOICED: 1,
+        LoadStatus.PAID: 0,
+    }
 
 
 async def test_get_recent_loads_newest_first(db):

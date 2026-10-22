@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from weasyprint import HTML
 
 from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
-from loadpilot.analytics import build_analytics, recent_activity
+from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables, recent_activity
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.documents import claim_pending, save_for_load, save_pending
 from loadpilot.geo import estimate_road_miles, nearest_place
@@ -43,6 +43,8 @@ async def dashboard(request: Request):
     # The current load is the active one picked up soonest; others are booked ahead
     active_loads = sorted(await db.get_loads(status=LoadStatus.ACTIVE), key=lambda load: load.pickup_date)
     needs_invoice = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
+    terms = payment_terms(await db.get_all_settings())
+    awaiting = receivables(await db.get_unpaid_invoices(), terms)
     activity = recent_activity(await db.get_recent_loads(limit=30))
 
     return templates.TemplateResponse(
@@ -52,6 +54,8 @@ async def dashboard(request: Request):
             "current_load": active_loads[0] if active_loads else None,
             "more_active": max(len(active_loads) - 1, 0),
             "needs_invoice": needs_invoice,
+            "awaiting": awaiting,
+            "terms": terms,
             "activity": activity,
         },
     )
@@ -69,7 +73,8 @@ async def loads_page(request: Request, search: str | None = None, status: LoadSt
         for tab_status, count in counts.items()
         if count or tab_status != LoadStatus.DRAFT
     ]
-    context = {"loads": loads, "search": search or "", "status": status, "tabs": tabs}
+    terms = payment_terms(await db.get_all_settings())
+    context = {"loads": loads, "search": search or "", "status": status, "tabs": tabs, "terms": terms}
 
     # HTMX tab/search requests only need the tabs + list
     if request.headers.get("HX-Request") == "true":
@@ -85,8 +90,10 @@ async def new_load_page(request: Request):
 
 @router.get("/loads/{load_id}", response_class=HTMLResponse)
 async def load_detail_page(request: Request, load_id: int):
-    load = await get_load_or_404(request.app.state.db, load_id)
-    return templates.TemplateResponse(request=request, name="load_detail.html", context={"load": load})
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    context = {"load": load, "terms": payment_terms(await db.get_all_settings()), "today": date.today()}
+    return templates.TemplateResponse(request=request, name="load_detail.html", context=context)
 
 
 @router.post("/parse-rate-con-html/")
@@ -257,13 +264,17 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
         await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
 
     invoice_num = f"INV-{1000 + load.id}"
+    invoiced_at = datetime.now().replace(microsecond=0)
+    terms = payment_terms(settings)
 
     html_content = templates.get_template("invoice_template.html").render(
         {
             "load": load,
             "settings": settings,
             "invoice_number": invoice_num,
-            "date_today": date.today().strftime("%b %d, %Y"),
+            "date_today": invoiced_at.strftime("%b %d, %Y"),
+            "terms": terms,
+            "due_date": due_date(load.model_copy(update={"invoiced_at": invoiced_at}), terms).strftime("%b %d, %Y"),
         }
     )
 
@@ -282,10 +293,29 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
             "invoice_number": invoice_num,
             "bol_pdf_path": bol_web_path,
             "invoice_pdf_path": invoice_web_path,
-            "invoiced_at": datetime.now().replace(microsecond=0),
+            "invoiced_at": invoiced_at,
         },
     )
 
+    return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
+
+
+@router.post("/loads/{load_id}/paid")
+async def mark_paid(request: Request, load_id: int, paid_at: date = Form(...), amount_paid: float = Form(..., gt=0)):
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    if load.status != LoadStatus.INVOICED:
+        raise HTTPException(status_code=409, detail="Only an invoiced load can be marked paid")
+    await db.update_load(load_id, {"status": LoadStatus.PAID, "paid_at": paid_at, "amount_paid": amount_paid})
+    return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
+
+
+@router.post("/loads/{load_id}/unpaid")
+async def mark_unpaid(request: Request, load_id: int):
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    if load.status == LoadStatus.PAID:
+        await db.update_load(load_id, {"status": LoadStatus.INVOICED, "paid_at": None, "amount_paid": None})
     return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
 
 

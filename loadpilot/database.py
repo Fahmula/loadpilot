@@ -45,6 +45,11 @@ MIGRATIONS: list[list[str]] = [
         "ALTER TABLE loads ADD COLUMN empty_miles INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE loads ADD COLUMN deadhead_origin TEXT",
     ],
+    # 6: broker payments
+    [
+        "ALTER TABLE loads ADD COLUMN paid_at TEXT",
+        "ALTER TABLE loads ADD COLUMN amount_paid REAL",
+    ],
 ]
 
 
@@ -179,8 +184,9 @@ class DatabaseManager:
                     invoice_number, broker_name, broker_email, load_reference,
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, empty_miles, deadhead_origin, status,
-                    notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at, paid_at,
+                    amount_paid
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -202,6 +208,8 @@ class DatabaseManager:
                     load.invoice_pdf_path,
                     load.created_at.isoformat(),
                     load.invoiced_at.isoformat() if load.invoiced_at else None,
+                    load.paid_at.isoformat() if load.paid_at else None,
+                    load.amount_paid,
                 ),
             )
             await db.commit()
@@ -305,13 +313,26 @@ class DatabaseManager:
             invoice_pdf_path=row["invoice_pdf_path"],
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
             invoiced_at=datetime.fromisoformat(row["invoiced_at"]) if row["invoiced_at"] else None,
+            paid_at=date.fromisoformat(row["paid_at"]) if row["paid_at"] else None,
+            amount_paid=row["amount_paid"],
         )
 
     async def get_earned_loads(self) -> list[Load]:
-        """Loads that have actually been delivered (Delivered or Invoiced); the basis for analytics."""
+        """Loads that have actually been delivered (Delivered, Invoiced or Paid); the basis for analytics."""
         return await self._fetch_loads(
-            "SELECT * FROM loads WHERE status IN (?, ?)", (LoadStatus.DELIVERED, LoadStatus.INVOICED)
+            "SELECT * FROM loads WHERE status IN (?, ?, ?)",
+            (LoadStatus.DELIVERED, LoadStatus.INVOICED, LoadStatus.PAID),
         )
+
+    async def get_unpaid_invoices(self) -> list[Load]:
+        """Invoiced loads still waiting on the broker's payment, oldest invoice first."""
+        return await self._fetch_loads(
+            "SELECT * FROM loads WHERE status = ? ORDER BY invoiced_at, id", (LoadStatus.INVOICED,)
+        )
+
+    async def get_load_by_invoice_number(self, invoice_number: str) -> Load | None:
+        loads = await self._fetch_loads("SELECT * FROM loads WHERE invoice_number = ?", (invoice_number,))
+        return loads[0] if loads else None
 
     async def get_recent_loads(self, limit: int = 20) -> list[Load]:
         """Most recently added loads first."""

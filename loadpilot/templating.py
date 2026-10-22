@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
 from loadpilot import __version__
+from loadpilot.analytics import days_overdue, due_date
 from loadpilot.icons import ICONS
 from loadpilot.models import LoadStatus
 
@@ -17,6 +18,7 @@ STATUS_STYLES = {
     LoadStatus.ACTIVE: ("badge-warning", "Active"),
     LoadStatus.DELIVERED: ("badge-success", "Delivered"),
     LoadStatus.INVOICED: ("badge-info", "Invoiced"),
+    LoadStatus.PAID: ("badge-secondary", "Paid"),
 }
 
 ALERT_STYLES = {
@@ -72,4 +74,4 @@ def short_date(value: date | datetime | None, with_year: bool = True) -> str:
 
 templates.env.globals.update(icon=icon, app_version=__version__, status_styles=STATUS_STYLES)
 templates.env.filters.update(money=money, miles=miles, short_date=short_date, last4=last4)
-templates.env.globals["rpm"] = rpm
+templates.env.globals.update(rpm=rpm, due_date=due_date, days_overdue=days_overdue)

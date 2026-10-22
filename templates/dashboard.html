@@ -84,6 +84,45 @@
     </section>
     {% endif %}
 
+    <!-- Invoices brokers haven't paid yet, oldest first -->
+    {% if awaiting.loads %}
+    <section>
+        <div class="mb-3 flex items-center justify-between">
+            <h2 class="section-title">Awaiting Payment</h2>
+            <span class="text-sm font-bold text-success">{{ awaiting.total | money }}</span>
+        </div>
+        {% if awaiting.overdue_count %}
+        <div role="alert" class="alert alert-soft alert-error mb-3 text-sm">
+            {{ icon("circle-alert", "size-5") }}
+            <span>{{ awaiting.overdue_count }} invoice{{ "s" if awaiting.overdue_count > 1 }} past net {{ terms }}: {{ awaiting.overdue_total | money }} overdue</span>
+        </div>
+        {% endif %}
+        <div class="card-soft divide-y divide-base-300/70">
+            {% for load in awaiting.loads[:10] %}
+            {% set overdue = days_overdue(load, terms) %}
+            <a href="/loads/{{ load.id }}#payment" class="flex items-center gap-3 p-4 transition hover:bg-base-200/50">
+                {{ icon_tile("clock", "error" if overdue else "info") }}
+                <div class="min-w-0 flex-1">
+                    <div class="truncate font-semibold">{{ load.broker_name }}</div>
+                    <div class="truncate text-sm text-base-content/60">{{ load.invoice_number }} · {{ load.delivery_location }}</div>
+                </div>
+                <div class="text-right">
+                    <div class="font-bold">{{ load.rate_amount | money }}</div>
+                    {% if overdue %}
+                    <div class="text-xs font-semibold text-error">{{ overdue }}d overdue</div>
+                    {% elif due_date(load, terms) %}
+                    <div class="text-xs text-base-content/60">Due {{ due_date(load, terms) | short_date(False) }}</div>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% if awaiting.loads | length > 10 %}
+        <a href="/loads?status=Invoiced" class="mt-3 block text-center text-sm font-medium text-primary">See all {{ awaiting.loads | length }} unpaid invoices</a>
+        {% endif %}
+    </section>
+    {% endif %}
+
     <!-- Recent activity -->
     <section>
         <div class="mb-3 flex items-center justify-between">
@@ -93,6 +132,7 @@
         {% if activity %}
         <div class="space-y-3">
             {% set kinds = {
+                "paid": ("Payment Received", "dollar-sign", "success"),
                 "invoiced": ("Invoice Generated", "receipt", "info"),
                 "delivered": ("Load Delivered", "circle-check", "success"),
                 "added": ("Load Added", "plus", "primary"),
@@ -109,6 +149,7 @@
                     <div class="flex items-baseline justify-between gap-2 text-sm">
                         <span class="truncate text-base-content/70">{{ event.load.pickup_location }} → {{ event.load.delivery_location }}</span>
                         {% if event.kind == "invoiced" %}<span class="shrink-0 font-semibold text-success">{{ event.load.rate_amount | money }}</span>{% endif %}
+                        {% if event.kind == "paid" %}<span class="shrink-0 font-semibold text-success">{{ event.load.amount_paid | money }}</span>{% endif %}
                     </div>
                     <div class="truncate text-xs text-base-content/50">{{ event.load.broker_name }}</div>
                 </div>
@@ -116,7 +157,7 @@
             {% endfor %}
         </div>
         {% else %}
-            {% call empty_state("clock", "Nothing yet", "Loads you add, deliver and invoice show up here.") %}{% endcall %}
+            {% call empty_state("clock", "Nothing yet", "Loads you add, deliver, invoice and get paid for show up here.") %}{% endcall %}
         {% endif %}
     </section>
 </div>

@@ -9,6 +9,7 @@ class LoadStatus(StrEnum):
     ACTIVE = "Active"
     DELIVERED = "Delivered"
     INVOICED = "Invoiced"
+    PAID = "Paid"
 
 
 class Load(BaseModel):
@@ -33,6 +34,8 @@ class Load(BaseModel):
     invoice_pdf_path: str | None = None
     created_at: datetime | None = None
     invoiced_at: datetime | None = None
+    paid_at: date | None = None
+    amount_paid: float | None = None
 
     @property
     def total_miles(self) -> int:
@@ -66,3 +69,5 @@ class LoadUpdate(BaseModel):
     deadhead_origin: str | None = None
     status: LoadStatus | None = None
     notes: str | None = None
+    paid_at: date | None = None
+    amount_paid: float | None = None
