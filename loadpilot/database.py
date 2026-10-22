@@ -1,9 +1,10 @@
+import json
 import logging
 from datetime import date, datetime
 
 import aiosqlite
 
-from loadpilot.models import Load, LoadStatus, User
+from loadpilot.models import Charge, Load, LoadStatus, User
 
 logger = logging.getLogger("loadpilot.database")
 
@@ -50,7 +51,15 @@ MIGRATIONS: list[list[str]] = [
         "ALTER TABLE loads ADD COLUMN paid_at TEXT",
         "ALTER TABLE loads ADD COLUMN amount_paid REAL",
     ],
+    # 7: extra charges (detention, lumper, TONU...) as a JSON list of {description, amount}
+    [
+        "ALTER TABLE loads ADD COLUMN charges TEXT NOT NULL DEFAULT '[]'",
+    ],
 ]
+
+
+def charges_json(charges: list[Charge | dict]) -> str:
+    return json.dumps([Charge.model_validate(charge).model_dump() for charge in charges])
 
 
 class DatabaseManager:
@@ -185,8 +194,8 @@ class DatabaseManager:
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, empty_miles, deadhead_origin, status,
                     notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at, paid_at,
-                    amount_paid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    amount_paid, charges
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -210,6 +219,7 @@ class DatabaseManager:
                     load.invoiced_at.isoformat() if load.invoiced_at else None,
                     load.paid_at.isoformat() if load.paid_at else None,
                     load.amount_paid,
+                    charges_json(load.charges),
                 ),
             )
             await db.commit()
@@ -269,6 +279,8 @@ class DatabaseManager:
                 params.append(val.isoformat())
             elif isinstance(val, LoadStatus):
                 params.append(val.value)
+            elif key == "charges":
+                params.append(charges_json(val or []))
             else:
                 params.append(val)
 
@@ -315,6 +327,7 @@ class DatabaseManager:
             invoiced_at=datetime.fromisoformat(row["invoiced_at"]) if row["invoiced_at"] else None,
             paid_at=date.fromisoformat(row["paid_at"]) if row["paid_at"] else None,
             amount_paid=row["amount_paid"],
+            charges=json.loads(row["charges"]),
         )
 
     async def get_earned_loads(self) -> list[Load]:

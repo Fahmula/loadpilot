@@ -39,6 +39,53 @@
         </div>
     </section>
 
+    <!-- Extra charges billed on top of the rate -->
+    {% set paid = load.status == "Paid" %}
+    {% if load.charges or not paid %}
+    <section id="charges" class="card-soft scroll-mt-6 p-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+            <h2 class="font-bold">Extra Charges</h2>
+            {% if load.charges %}<span class="text-sm text-base-content/60">Total billed <strong class="text-success">{{ load.total_amount | money }}</strong></span>{% endif %}
+        </div>
+        {% if load.charges %}
+        <ul class="mb-3 divide-y divide-base-300/70 rounded-xl bg-base-200/60">
+            {% for charge in load.charges %}
+            <li class="flex items-center gap-3 px-3 py-2 text-sm">
+                <span class="min-w-0 flex-1 truncate font-medium">{{ charge.description }}</span>
+                <span class="font-semibold">{{ charge.amount | money }}</span>
+                {% if not paid %}
+                <form method="post" action="/loads/{{ load.id }}/charges/{{ loop.index0 }}/delete">
+                    <button type="submit" class="btn btn-ghost btn-xs btn-square text-base-content/50 hover:text-error" aria-label="Remove {{ charge.description }}">{{ icon("x", "size-4") }}</button>
+                </form>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mb-3 text-sm text-base-content/60">Detention, layover, lumper or TONU? Add it here and it goes on the invoice.</p>
+        {% endif %}
+        {% if not paid %}
+        <form method="post" action="/loads/{{ load.id }}/charges" class="grid grid-cols-[1fr_7.5rem_auto] gap-2">
+            <input type="text" name="description" list="charge-kinds" class="input w-full" placeholder="Charge" aria-label="Charge" required>
+            <datalist id="charge-kinds">
+                <option value="Detention"></option>
+                <option value="Layover"></option>
+                <option value="Lumper"></option>
+                <option value="TONU"></option>
+                <option value="Driver assist"></option>
+                <option value="Extra stop"></option>
+            </datalist>
+            <label class="input w-full">
+                {{ icon("dollar-sign", "size-4 text-base-content/50") }}
+                <input type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" aria-label="Amount" required>
+            </label>
+            <button type="submit" class="btn btn-soft btn-primary btn-square" aria-label="Add charge">{{ icon("plus", "size-5") }}</button>
+        </form>
+        {% if load.invoice_pdf_path %}<p class="mt-2 text-xs text-base-content/60">Rebuild the invoice after changing charges so the PDF matches.</p>{% endif %}
+        {% endif %}
+    </section>
+    {% endif %}
+
     <!-- Next step for this load -->
     {% if load.status == "Active" %}
     <section class="card-soft p-5">
@@ -87,7 +134,7 @@
                 <h2 class="font-bold">Invoice {{ load.invoice_number }}</h2>
                 <p class="text-sm text-base-content/60">
                     {% if load.invoiced_at %}Sent {{ load.invoiced_at | short_date }}{% else %}Invoice generated{% endif %}
-                    · {{ load.rate_amount | money }}
+                    · {{ load.total_amount | money }}
                 </p>
             </div>
         </div>
@@ -100,9 +147,17 @@
         <p class="mt-4 flex items-center gap-2 text-sm text-base-content/70">{{ icon("clock", "size-4") }} Payment due {{ due | short_date }} (net {{ terms }})</p>
         {% endif %}
         {% if load.invoice_pdf_path %}
-        <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-soft btn-primary mt-4 w-full rounded-xl">
-            {{ icon("external-link", "size-5") }} Open Invoice PDF
-        </a>
+        {% if request.query_params.get("rebuilt") %}
+        <p class="mt-4 flex items-center gap-2 text-sm text-success">{{ icon("circle-check", "size-4") }} Invoice rebuilt with the latest details.</p>
+        {% endif %}
+        <div class="mt-4 grid grid-cols-[1fr_auto] gap-2">
+            <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-soft btn-primary rounded-xl">
+                {{ icon("external-link", "size-5") }} Open Invoice PDF
+            </a>
+            <form method="post" action="/loads/{{ load.id }}/rebuild-invoice">
+                <button type="submit" class="btn btn-ghost rounded-xl" title="Rebuild the PDF after editing the load or its charges">{{ icon("receipt", "size-5") }} Rebuild</button>
+            </form>
+        </div>
         {% endif %}
 
         <form method="post" action="/loads/{{ load.id }}/paid" class="mt-4 border-t border-base-300/70 pt-4">
@@ -114,7 +169,7 @@
                 </label>
                 <label class="input w-full">
                     {{ icon("dollar-sign", "size-4 text-base-content/50") }}
-                    <input type="number" step="0.01" min="0.01" name="amount_paid" value="{{ '%.2f' | format(load.rate_amount) }}" aria-label="Amount received" required>
+                    <input type="number" step="0.01" min="0.01" name="amount_paid" value="{{ '%.2f' | format(load.total_amount) }}" aria-label="Amount received" required>
                 </label>
             </div>
             <p class="mt-2 text-xs text-base-content/60">Lower the amount if the broker took a quick-pay fee or short-paid.</p>
@@ -123,7 +178,7 @@
     </section>
 
     {% elif load.status == "Paid" %}
-    {% set short = load.rate_amount - (load.amount_paid or load.rate_amount) %}
+    {% set short = load.total_amount - (load.amount_paid or load.total_amount) %}
     <section class="card-soft p-5">
         <div class="flex items-center gap-3">
             {{ icon_tile("circle-check", "success") }}
@@ -135,7 +190,7 @@
             </div>
         </div>
         {% if short > 0.005 %}
-        <p class="mt-3 text-sm text-warning">{{ short | money }} less than the {{ load.rate_amount | money }} rate.</p>
+        <p class="mt-3 text-sm text-warning">{{ short | money }} less than the {{ load.total_amount | money }} billed.</p>
         {% endif %}
         <form method="post" action="/loads/{{ load.id }}/unpaid" class="mt-3">
             <button type="submit" class="btn btn-ghost btn-sm w-full" onclick="return confirm('Move this load back to awaiting payment?')">Undo paid</button>

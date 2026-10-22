@@ -29,7 +29,7 @@
                 {% set overdue = days_overdue(load, terms) %}
                 {% if overdue %}<span class="badge badge-soft badge-error badge-sm whitespace-nowrap font-semibold">{{ overdue }}d overdue</span>{% endif %}
             </div>
-            <span class="shrink-0 text-lg font-bold text-success">{{ load.rate_amount | money }}</span>
+            <span class="shrink-0 text-lg font-bold text-success">{{ load.total_amount | money }}</span>
         </div>
         <div class="mb-3 truncate text-sm text-base-content/60">{{ load.broker_name }}</div>
         <div class="flex items-center gap-2">

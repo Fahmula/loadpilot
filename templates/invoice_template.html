@@ -61,7 +61,7 @@
                 </td>
                 <td style="width: 20%;">
                     <div class="label">Invoice Date</div>
-                    <div class="value">{{ date_today }}</div>
+                    <div class="value">{{ invoice_date }}</div>
                 </td>
                 <td style="width: 20%;">
                     <div class="label">Due Date</div>
@@ -94,17 +94,23 @@
                     <td>{{ load.delivery_location }}<br><span class="muted">{{ (load.actual_delivery_date or load.delivery_date).strftime("%b %d, %Y") }}</span></td>
                     <td class="amount">${{ "{:,.2f}".format(load.rate_amount) }}</td>
                 </tr>
+                {% for charge in load.charges %}
+                <tr>
+                    <td colspan="3"><strong>{{ charge.description }}</strong></td>
+                    <td class="amount">${{ "{:,.2f}".format(charge.amount) }}</td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
 
         <table class="totals">
             <tr>
                 <td class="muted">Subtotal</td>
-                <td class="right">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+                <td class="right">${{ "{:,.2f}".format(load.total_amount) }}</td>
             </tr>
             <tr class="due">
                 <td>Total Due</td>
-                <td class="right">${{ "{:,.2f}".format(load.rate_amount) }}</td>
+                <td class="right">${{ "{:,.2f}".format(load.total_amount) }}</td>
             </tr>
         </table>
 
