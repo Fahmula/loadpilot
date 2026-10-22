@@ -3,7 +3,7 @@ import re
 from datetime import date
 
 from loadpilot.ai import AIError, Model
-from loadpilot.config import BOL_DIR, INVOICE_DIR
+from loadpilot.config import BOL_DIR, INVOICE_DIR, RATECON_DIR
 from loadpilot.database import DatabaseManager
 from loadpilot.models import LoadStatus
 from loadpilot.routes import settings as settings_routes
@@ -203,6 +203,95 @@ def test_parse_rate_con_prefills_form(client, monkeypatch):
     ai, model, pages = calls[0]
     assert (ai.provider.key, ai.api_key, model) == ("gemini", "test-key-1234", "test-model")
     assert pages == [(b"img", "image/png", "ratecon.png")]
+
+
+def test_scanned_rate_con_is_saved_with_the_load(client, monkeypatch):
+    configure_ai(client)
+    monkeypatch.setattr(ui, "extract_rate_con", lambda ai, model, pages: LOAD_FORM)
+
+    form = client.post("/parse-rate-con-html/", files={"files": ("ratecon.pdf", b"%PDF-1.4 rc", "application/pdf")})
+    pending = re.search(r'name="rate_con_file" value="([^"]+)"', form.text).group(1)
+    client.post("/create-load-web/", data={**LOAD_FORM, "rate_con_file": pending})
+
+    load = client.get("/api/loads/").json()[0]
+    assert load["rate_con_pdf_path"].startswith(f"static/ratecons/ratecon_{load['id']}_")
+    assert client.get("/" + load["rate_con_pdf_path"]).content == b"%PDF-1.4 rc"
+    assert "Rate Con" in client.get(f"/loads/{load['id']}").text
+
+
+def test_create_load_ignores_a_bad_rate_con_reference(client):
+    client.post("/create-load-web/", data={**LOAD_FORM, "rate_con_file": "../loadpilot.db"})
+
+    assert client.get("/api/loads/").json()[0]["rate_con_pdf_path"] is None
+
+
+def test_attach_rate_con_to_an_existing_load(client, db_path):
+    load = seed(db_path)
+    assert "No rate con on file" in client.get(f"/loads/{load.id}").text
+
+    response = client.post(
+        f"/loads/{load.id}/rate-con",
+        files={"rate_con": ("../../rc.pdf", b"%PDF-1.4", "application/pdf")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    path = client.get(f"/api/loads/{load.id}").json()["rate_con_pdf_path"]
+    assert (RATECON_DIR / path.removeprefix("static/ratecons/")).resolve().parent == RATECON_DIR.resolve()
+
+
+def test_attach_rate_con_rejects_other_file_types(client, db_path):
+    load = seed(db_path)
+
+    exe = {"rate_con": ("x.exe", b"MZ", "application/x-msdownload")}
+    pdf = {"rate_con": ("a.pdf", b"%PDF", "application/pdf")}
+
+    assert client.post(f"/loads/{load.id}/rate-con", files=exe).status_code == 400
+    assert client.post("/loads/999/rate-con", files=pdf).status_code == 404
+
+
+def test_edit_page_is_prefilled(client, db_path):
+    load = seed(db_path, empty_miles=40, deadhead_origin="Waco, TX")
+
+    html = client.get(f"/loads/{load.id}/edit").text
+
+    assert f'hx-post="/loads/{load.id}/edit"' in html
+    assert 'value="Acme Logistics"' in html
+    assert 'value="2026-10-01"' in html
+    assert 'value="Waco, TX"' in html
+    assert "Save Changes" in html
+    assert "data-auto-locate" not in html  # GPS describes now, not when this load ran
+    assert 'name="actual_delivery_date"' not in html
+
+
+def test_edit_load_updates_fields_and_keeps_the_rest(client, db_path):
+    load = seed(db_path, status=LoadStatus.INVOICED, invoice_number="INV-1001", actual_delivery_date=date(2026, 10, 3))
+
+    response = client.post(
+        f"/loads/{load.id}/edit",
+        data={**LOAD_FORM, "rate_amount": "2650", "broker_email": "", "actual_delivery_date": "2026-10-04"},
+    )
+
+    assert response.headers["HX-Redirect"] == f"/loads/{load.id}"
+    edited = client.get(f"/api/loads/{load.id}").json()
+    assert edited["rate_amount"] == 2650
+    assert edited["broker_email"] is None
+    assert edited["actual_delivery_date"] == "2026-10-04"
+    assert edited["status"] == "Invoiced"
+    assert edited["invoice_number"] == "INV-1001"
+
+
+def test_edit_cannot_add_a_delivery_day_to_an_undelivered_load(client, db_path):
+    load = seed(db_path)
+
+    client.post(f"/loads/{load.id}/edit", data={**LOAD_FORM, "actual_delivery_date": "2026-10-04"})
+
+    assert client.get(f"/api/loads/{load.id}").json()["actual_delivery_date"] is None
+
+
+def test_edit_missing_load_is_404(client):
+    assert client.get("/loads/999/edit").status_code == 404
+    assert client.post("/loads/999/edit", data=LOAD_FORM).status_code == 404
 
 
 def test_parse_rate_con_uses_suggested_model_when_none_chosen(client, monkeypatch):

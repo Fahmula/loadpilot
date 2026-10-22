@@ -23,10 +23,10 @@ SESSION_MAX_AGE = 30 * 24 * 60 * 60  # stay signed in on the phone for a month
 # scrypt cost parameters (~16 MB of memory per hash)
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
 
-# Pages and assets reachable without logging in. Uploaded BOLs and invoices live under
+# Pages and assets reachable without logging in. Rate cons, BOLs and invoices live under
 # /static too, but they hold customer and banking details, so they stay private.
 PUBLIC_PATHS = frozenset({"/login", "/setup", "/health", "/manifest.json", "/sw.js"})
-PRIVATE_STATIC_PREFIXES = ("/static/bols/", "/static/invoices/")
+PRIVATE_STATIC_PREFIXES = ("/static/bols/", "/static/ratecons/", "/static/invoices/")
 
 
 # -----------------------------------------

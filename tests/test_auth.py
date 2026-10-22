@@ -58,6 +58,7 @@ def test_public_paths():
     assert is_public_path("/static/icon-192.png")
     assert not is_public_path("/static/invoices/invoice_INV-1001.pdf")
     assert not is_public_path("/static/bols/bol_1.png")
+    assert not is_public_path("/static/ratecons/ratecon_1_abc123.pdf")
     assert not is_public_path("/")
 
 

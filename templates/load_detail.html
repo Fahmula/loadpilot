@@ -4,7 +4,10 @@
 {% block title %}#{{ load.load_reference }} · LoadPilot{% endblock %}
 
 {% block content %}
-{% call back_header("#" ~ load.load_reference, "/loads", load.broker_name) %}{{ status_badge(load.status, "badge-md") }}{% endcall %}
+{% call back_header("#" ~ load.load_reference, "/loads", load.broker_name) %}
+    {{ status_badge(load.status, "badge-md") }}
+    <a href="/loads/{{ load.id }}/edit" class="btn btn-circle btn-ghost btn-sm" aria-label="Edit load" title="Edit load">{{ icon("pencil", "size-5") }}</a>
+{% endcall %}
 
 <div class="space-y-4">
     <!-- Route & pay -->
@@ -132,18 +135,26 @@
     </section>
 
     <!-- Documents -->
-    {% if load.bol_pdf_path or load.invoice_pdf_path %}
     <section class="card-soft divide-y divide-base-300/70">
         <h2 class="px-5 pb-2 pt-4 font-bold">Documents</h2>
-        {% for label, path, icon_name in [("Signed BOL", load.bol_pdf_path, "file"), ("Invoice PDF", load.invoice_pdf_path, "file-text")] if path %}
+        {% for label, path, icon_name in [("Rate Con", load.rate_con_pdf_path, "file-check"), ("Signed BOL", load.bol_pdf_path, "file"), ("Invoice PDF", load.invoice_pdf_path, "file-text")] if path %}
         <a href="/{{ path }}" target="_blank" class="flex items-center gap-3 px-5 py-3 transition hover:bg-base-200/40">
             {{ icon_tile(icon_name, "neutral", "size-9") }}
             <span class="flex-1 font-medium">{{ label }}</span>
             {{ icon("external-link", "size-4 text-base-content/40") }}
         </a>
         {% endfor %}
+        {% if not load.rate_con_pdf_path %}
+        <form method="post" action="/loads/{{ load.id }}/rate-con" enctype="multipart/form-data" class="flex items-center gap-3 px-5 py-3" data-auto-submit>
+            {{ icon_tile("file-check", "neutral", "size-9") }}
+            <span class="flex-1 font-medium text-base-content/60">No rate con on file</span>
+            <label class="btn btn-sm rounded-lg">
+                {{ icon("cloud-upload", "size-4") }} Attach
+                <input type="file" name="rate_con" accept="application/pdf,image/*" class="sr-only" required>
+            </label>
+        </form>
+        {% endif %}
     </section>
-    {% endif %}
 
     <button class="btn btn-ghost btn-sm w-full text-error" hx-post="/delete-load-web/{{ load.id }}"
             hx-confirm="Permanently delete load #{{ load.load_reference }}? This can't be undone.">
@@ -160,6 +171,10 @@
         input.addEventListener("change", function () {
             if (input.files.length) zone.querySelector("[data-file-label]").textContent = input.files[0].name;
         });
+    });
+    // Attaching a rate con uploads as soon as a file is picked
+    document.querySelectorAll("[data-auto-submit]").forEach(function (form) {
+        form.querySelector("input[type=file]").addEventListener("change", function () { form.submit(); });
     });
     document.querySelectorAll("[data-loading-form]").forEach(function (form) {
         form.addEventListener("submit", function () {

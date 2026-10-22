@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from loadpilot import __version__
 from loadpilot.auth import SESSION_MAX_AGE, AuthMiddleware, LoginThrottle, load_secret_key
-from loadpilot.config import BOL_DIR, DB_PATH, INVOICE_DIR, LOG_DIR, ensure_data_dirs
+from loadpilot.config import BOL_DIR, DB_PATH, INVOICE_DIR, LOG_DIR, RATECON_DIR, ensure_data_dirs
 from loadpilot.database import DatabaseManager
 from loadpilot.routes import api, auth, settings, ui
 
@@ -77,6 +77,7 @@ app.add_middleware(
 )
 
 app.mount("/static/bols", StaticFiles(directory=BOL_DIR), name="bols")
+app.mount("/static/ratecons", StaticFiles(directory=RATECON_DIR), name="ratecons")
 app.mount("/static/invoices", StaticFiles(directory=INVOICE_DIR), name="invoices")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

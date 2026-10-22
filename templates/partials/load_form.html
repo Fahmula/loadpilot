@@ -1,12 +1,29 @@
-{# Review form for a new load, prefilled by AI extraction (or blank for manual entry). #}
-<form id="new-load-form" data-last-delivery="{{ last_delivery or '' }}" hx-post="/create-load-web/" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
+{# Load form: a new load prefilled by AI extraction (or blank for manual entry), or an existing load when editing. #}
+{% set editing = editing | default(false) %}
+<form id="new-load-form" data-last-delivery="{{ last_delivery or '' }}" {% if not editing %}data-auto-locate{% endif %}
+      hx-post="{{ action | default('/create-load-web/') }}" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
     <div class="mb-5 flex items-center gap-3">
-        <span class="grid size-10 place-items-center rounded-xl bg-success/12 text-success">{{ icon("circle-check", "size-5") }}</span>
+        <span class="grid size-10 place-items-center rounded-xl bg-success/12 text-success">{{ icon("pencil" if editing else "circle-check", "size-5") }}</span>
         <div>
+            {% if editing %}
+            <h2 class="font-bold">Load Details</h2>
+            <p class="text-sm text-base-content/60">Fix anything that's wrong, then save.</p>
+            {% else %}
             <h2 class="font-bold">{{ "Review Details" if data.broker_name else "Load Details" }}</h2>
             <p class="text-sm text-base-content/60">{{ "Check what the AI found, then save." if data.broker_name else "Fill in the rate con details." }}</p>
+            {% endif %}
         </div>
     </div>
+    {% if rate_con_file %}
+    <input type="hidden" name="rate_con_file" value="{{ rate_con_file }}">
+    <p class="-mt-2 mb-4 flex items-center gap-2 text-sm text-base-content/60">{{ icon("file-check", "size-4 text-success") }} The rate con is saved with this load.</p>
+    {% endif %}
+    {% if editing and data.invoice_pdf_path %}
+    <div role="alert" class="alert alert-soft alert-warning mb-4 text-sm">
+        {{ icon("circle-alert", "size-5") }}
+        <span>Invoice {{ data.invoice_number }} is already generated. It won't change with these edits.</span>
+    </div>
+    {% endif %}
 
     <fieldset class="fieldset gap-3">
         <legend class="fieldset-legend text-xs uppercase tracking-wide text-base-content/50">Broker</legend>
@@ -45,6 +62,13 @@
                 <span>Delivery date</span>
                 <input type="date" name="delivery_date" class="input w-40" value="{{ data.delivery_date or '' }}" required>
             </label>
+            {% if editing and data.actual_delivery_date %}
+            <span class="self-center text-sm text-base-content/60">Actually delivered</span>
+            <label class="floating-label">
+                <span>Delivered on</span>
+                <input type="date" name="actual_delivery_date" class="input w-40" value="{{ data.actual_delivery_date }}" required>
+            </label>
+            {% endif %}
         </div>
     </fieldset>
 
@@ -69,7 +93,7 @@
         <div class="grid grid-cols-2 gap-3">
             <label class="input w-full">
                 {{ icon("dollar-sign", "size-4 text-base-content/50") }}
-                <input type="number" step="0.01" min="0" name="rate_amount" placeholder="Rate" value="{{ data.rate_amount or '' }}" required data-rpm-rate>
+                <input type="number" step="0.01" min="0" name="rate_amount" placeholder="Rate" value="{{ '%.2f' | format(data.rate_amount | float) if data.rate_amount else '' }}" required data-rpm-rate>
             </label>
             <label class="input w-full">
                 <input type="number" min="0" name="loaded_miles" placeholder="Loaded miles" value="{{ data.loaded_miles if data.loaded_miles is not none else 0 }}" required data-rpm-miles>
@@ -89,7 +113,7 @@
     </fieldset>
 
     <button type="submit" class="btn btn-success btn-lg mt-5 w-full rounded-xl">
-        {{ icon("check", "size-5") }} Save Load
+        {{ icon("check", "size-5") }} {{ "Save Changes" if editing else "Save Load" }}
     </button>
 </form>
 
@@ -117,8 +141,8 @@
         var form = document.getElementById("new-load-form");
         var origin = form.querySelector("[name=deadhead_origin]"), pickup = form.querySelector("[name=pickup_location]");
         var empty = form.querySelector("[name=empty_miles]"), status = form.querySelector("[data-deadhead-status]");
-        // Once the driver types empty miles themselves (e.g. from DAT), stop overwriting them
-        var typed = false;
+        // Once the driver types empty miles (e.g. from DAT), or a saved load already has some, stop overwriting them
+        var typed = parseFloat(empty.value) > 0;
         empty.addEventListener("input", function (event) {
             if (event.isTrusted) typed = empty.value !== "";
         });
@@ -175,7 +199,8 @@
         form.querySelector("[data-locate]").addEventListener("click", function () { locate(true); });
         origin.addEventListener("change", function () { estimate(); });
         pickup.addEventListener("change", function () { estimate(); });
+        // GPS only describes where the driver is now, so only a new load starts from it
         if (origin.value.trim()) estimate();
-        else locate(false);
+        else if ("autoLocate" in form.dataset) locate(false);
     })();
 </script>
