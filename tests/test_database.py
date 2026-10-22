@@ -188,6 +188,13 @@ async def test_migration_gives_existing_loads_no_charges(tmp_path, monkeypatch):
     assert (await manager.get_load(1)).charges == []
 
 
+async def test_broker_contacts_newest_first(db):
+    await db.add_load(make_load(broker_name="Echo", broker_email=None))
+    await db.add_load(make_load(broker_name="TQL", broker_email="loads@tql.example"))
+
+    assert await db.get_broker_contacts() == [("TQL", "loads@tql.example"), ("Echo", None)]
+
+
 async def test_add_load_stamps_created_at(db):
     saved = await db.add_load(make_load())
 

@@ -343,6 +343,12 @@ class DatabaseManager:
             "SELECT * FROM loads WHERE status = ? ORDER BY invoiced_at, id", (LoadStatus.INVOICED,)
         )
 
+    async def get_broker_contacts(self) -> list[tuple[str, str | None]]:
+        """(broker name, email) from every load, newest first."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT broker_name, broker_email FROM loads ORDER BY id DESC") as cursor:
+                return [tuple(row) for row in await cursor.fetchall()]
+
     async def get_load_by_invoice_number(self, invoice_number: str) -> Load | None:
         loads = await self._fetch_loads("SELECT * FROM loads WHERE invoice_number = ?", (invoice_number,))
         return loads[0] if loads else None
