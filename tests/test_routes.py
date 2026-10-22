@@ -3,6 +3,8 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from loadpilot.ai import AIError, Model
 from loadpilot.config import BOL_DIR, INVOICE_DIR, RATECON_DIR
 from loadpilot.database import DatabaseManager
@@ -186,9 +188,9 @@ def test_generate_invoice(client, db_path):
     assert client.get("/" + invoiced["invoice_pdf_path"]).status_code == 200
 
 
-def test_invoice_shows_terms_and_due_date(client, db_path, monkeypatch):
-    load = seed(db_path, status=LoadStatus.DELIVERED)
-    client.post("/settings/section/bank", data={"payment_terms_days": "15"})
+@pytest.fixture
+def rendered_invoices(monkeypatch) -> list[str]:
+    """Captures the HTML of each invoice instead of rendering a real PDF."""
     rendered = []
 
     class FakeHTML:
@@ -199,10 +201,100 @@ def test_invoice_shows_terms_and_due_date(client, db_path, monkeypatch):
             Path(path).write_bytes(b"%PDF")
 
     monkeypatch.setattr(ui, "HTML", FakeHTML)
+    return rendered
+
+
+def test_invoice_shows_terms_and_due_date(client, db_path, rendered_invoices):
+    rendered = rendered_invoices
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+    client.post("/settings/section/bank", data={"payment_terms_days": "15"})
     client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
 
     assert "Net 15" in rendered[0]
     assert (date.today() + timedelta(days=15)).strftime("%b %d, %Y") in rendered[0]
+
+
+def test_add_and_remove_charges(client, db_path):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    response = client.post(
+        f"/loads/{load.id}/charges", data={"description": " Detention ", "amount": "150"}, follow_redirects=False
+    )
+    client.post(f"/loads/{load.id}/charges", data={"description": "Lumper", "amount": "85.50"})
+
+    assert response.headers["location"] == f"/loads/{load.id}#charges"
+    charges = client.get(f"/api/loads/{load.id}").json()["charges"]
+    assert charges == [{"description": "Detention", "amount": 150.0}, {"description": "Lumper", "amount": 85.5}]
+    assert 'Total billed <strong class="text-success">$2,735.50</strong>' in client.get(f"/loads/{load.id}").text
+
+    client.post(f"/loads/{load.id}/charges/0/delete")
+
+    assert client.get(f"/api/loads/{load.id}").json()["charges"] == [{"description": "Lumper", "amount": 85.5}]
+    assert client.post(f"/loads/{load.id}/charges/5/delete").status_code == 404
+
+
+def test_charges_are_validated(client, db_path):
+    load = seed(db_path)
+    paid = seed(db_path, status=LoadStatus.PAID)
+
+    def add(load_id, description="Detention", amount="100"):
+        return client.post(f"/loads/{load_id}/charges", data={"description": description, "amount": amount})
+
+    assert add(load.id, description="   ").status_code == 422
+    assert add(load.id, amount="0").status_code == 422
+    assert add(paid.id).status_code == 409
+    assert add(999).status_code == 404
+    assert "Extra Charges" not in client.get(f"/loads/{paid.id}").text  # nothing to show once paid
+
+
+def test_invoice_bills_rate_plus_charges(client, db_path, rendered_invoices):
+    load = seed(db_path, status=LoadStatus.DELIVERED, charges=[{"description": "Detention", "amount": 150.0}])
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+
+    assert "Detention" in rendered_invoices[0]
+    assert "$150.00" in rendered_invoices[0]
+    assert "$2,650.00" in rendered_invoices[0]  # total due
+
+
+def test_rebuild_invoice_keeps_number_and_date(client, db_path, rendered_invoices):
+    load = invoiced_load(db_path, days_ago=3, invoice_number="INV-1001")
+    sent = (date.today() - timedelta(days=3)).strftime("%b %d, %Y")
+    client.post(f"/loads/{load.id}/charges", data={"description": "Layover", "amount": "250"})
+
+    response = client.post(f"/loads/{load.id}/rebuild-invoice", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "INV-1001" in rendered_invoices[0]
+    assert sent in rendered_invoices[0]
+    assert "Layover" in rendered_invoices[0]
+    rebuilt = client.get(f"/api/loads/{load.id}").json()
+    assert rebuilt["invoice_pdf_path"] == "static/invoices/invoice_INV-1001.pdf"
+    assert "Invoice rebuilt" in client.get(response.headers["location"]).text
+
+
+def test_rebuild_needs_an_invoice(client, db_path):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    assert client.post(f"/loads/{load.id}/rebuild-invoice").status_code == 409
+
+
+def test_charges_count_toward_what_the_broker_owes(client, db_path):
+    load = invoiced_load(db_path, days_ago=3, charges=[{"description": "TONU", "amount": 300.0}])
+
+    assert 'value="2800.00"' in client.get(f"/loads/{load.id}").text  # Mark Paid defaults to the total
+    assert "$2,800.00" in client.get("/").text
+
+
+def test_api_can_replace_charges(client, db_path):
+    load = seed(db_path, charges=[{"description": "Lumper", "amount": 80.0}])
+
+    replaced = client.put(f"/api/loads/{load.id}", json={"charges": [{"description": "Detention", "amount": 75}]})
+    cleared = client.put(f"/api/loads/{load.id}", json={"charges": None})
+
+    assert replaced.json()["charges"] == [{"description": "Detention", "amount": 75.0}]
+    assert cleared.json()["charges"] == []
+    assert client.put(f"/api/loads/{load.id}", json={"charges": [{"description": "", "amount": 5}]}).status_code == 422
 
 
 def invoiced_load(db_path, days_ago: int, **overrides):

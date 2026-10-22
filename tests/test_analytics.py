@@ -11,7 +11,7 @@ from loadpilot.analytics import (
     receivables,
     recent_activity,
 )
-from loadpilot.models import LoadStatus
+from loadpilot.models import Charge, LoadStatus
 
 from .conftest import make_load
 
@@ -173,3 +173,14 @@ def test_recent_activity_includes_payments():
     load = invoiced(date(2026, 9, 6)).model_copy(update={"paid_at": date(2026, 10, 2), "amount_paid": 980.0})
 
     assert recent_activity([load])[0]["kind"] == "paid"
+
+
+def test_revenue_includes_extra_charges():
+    load = delivered(date(2026, 10, 2), rate=1000, miles=500).model_copy(
+        update={"charges": [Charge(description="Detention", amount=200.0)]}
+    )
+
+    current = build_analytics([load], "month", TODAY)["current"]
+
+    assert current.revenue == 1200
+    assert receivables([load], 30, TODAY)["total"] == 1200

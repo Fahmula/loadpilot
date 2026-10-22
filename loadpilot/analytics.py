@@ -35,7 +35,7 @@ class Totals:
         return self.empty_miles / total * 100 if total else 0.0
 
     def add(self, load: Load):
-        self.revenue += load.rate_amount
+        self.revenue += load.total_amount
         self.miles += load.loaded_miles or 0
         self.empty_miles += load.empty_miles or 0
         self.loads += 1
@@ -106,7 +106,7 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
     trend = []
     for month_start in starts:
         revenue = sum(
-            load.rate_amount
+            load.total_amount
             for load in loads
             if (earned_on(load).year, earned_on(load).month) == (month_start.year, month_start.month)
         )
@@ -162,9 +162,9 @@ def receivables(unpaid: list[Load], terms: int, today: date | None = None) -> di
     overdue = [load for load in unpaid if days_overdue(load, terms, today)]
     return {
         "loads": unpaid,
-        "total": sum(load.rate_amount for load in unpaid),
+        "total": sum(load.total_amount for load in unpaid),
         "overdue_count": len(overdue),
-        "overdue_total": sum(load.rate_amount for load in overdue),
+        "overdue_total": sum(load.total_amount for load in overdue),
     }
 
 

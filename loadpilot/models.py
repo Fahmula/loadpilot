@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoadStatus(StrEnum):
@@ -10,6 +10,13 @@ class LoadStatus(StrEnum):
     DELIVERED = "Delivered"
     INVOICED = "Invoiced"
     PAID = "Paid"
+
+
+class Charge(BaseModel):
+    """An extra charge billed on top of the rate, e.g. detention, layover, a lumper fee or TONU."""
+
+    description: str = Field(min_length=1)
+    amount: float = Field(gt=0)
 
 
 class Load(BaseModel):
@@ -36,6 +43,12 @@ class Load(BaseModel):
     invoiced_at: datetime | None = None
     paid_at: date | None = None
     amount_paid: float | None = None
+    charges: list[Charge] = []
+
+    @property
+    def total_amount(self) -> float:
+        """The rate plus extra charges: what the invoice bills and the broker owes."""
+        return self.rate_amount + sum(charge.amount for charge in self.charges)
 
     @property
     def total_miles(self) -> int:
@@ -71,3 +84,4 @@ class LoadUpdate(BaseModel):
     notes: str | None = None
     paid_at: date | None = None
     amount_paid: float | None = None
+    charges: list[Charge] | None = None

@@ -15,7 +15,7 @@ from loadpilot.analytics import build_analytics, due_date, payment_terms, receiv
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.documents import claim_pending, save_for_load, save_pending
 from loadpilot.geo import estimate_road_miles, nearest_place
-from loadpilot.models import Load, LoadStatus
+from loadpilot.models import Charge, Load, LoadStatus
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
 logger = logging.getLogger("loadpilot.routes.ui")
@@ -249,6 +249,24 @@ async def update_load_status(request: Request, load_id: int, new_status: str):
     return Response(headers={"HX-Refresh": "true"})
 
 
+async def write_invoice(load: Load, settings: dict) -> str:
+    """Renders the invoice PDF for load.invoice_number, dated load.invoiced_at; returns its web path."""
+    terms = payment_terms(settings)
+    html_content = templates.get_template("invoice_template.html").render(
+        {
+            "load": load,
+            "settings": settings,
+            "invoice_number": load.invoice_number,
+            "invoice_date": load.invoiced_at.strftime("%b %d, %Y"),
+            "terms": terms,
+            "due_date": due_date(load, terms).strftime("%b %d, %Y"),
+        }
+    )
+    pdf_filename = f"invoice_{load.invoice_number}.pdf"
+    await asyncio.to_thread(HTML(string=html_content).write_pdf, str(INVOICE_DIR / pdf_filename))
+    return f"static/invoices/{pdf_filename}"
+
+
 @router.post("/generate-invoice/{load_id}")
 async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile = File(...)):
     db = request.app.state.db
@@ -263,41 +281,61 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     with open(str(bol_physical_path), "wb") as buffer:
         await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
 
-    invoice_num = f"INV-{1000 + load.id}"
-    invoiced_at = datetime.now().replace(microsecond=0)
-    terms = payment_terms(settings)
-
-    html_content = templates.get_template("invoice_template.html").render(
-        {
-            "load": load,
-            "settings": settings,
-            "invoice_number": invoice_num,
-            "date_today": invoiced_at.strftime("%b %d, %Y"),
-            "terms": terms,
-            "due_date": due_date(load.model_copy(update={"invoiced_at": invoiced_at}), terms).strftime("%b %d, %Y"),
-        }
-    )
-
-    pdf_filename = f"invoice_{invoice_num}.pdf"
-    pdf_physical_path = INVOICE_DIR / pdf_filename
-
-    await asyncio.to_thread(HTML(string=html_content).write_pdf, str(pdf_physical_path))
-
-    bol_web_path = f"static/bols/{bol_filename}"
-    invoice_web_path = f"static/invoices/{pdf_filename}"
+    invoiced = {"invoice_number": f"INV-{1000 + load.id}", "invoiced_at": datetime.now().replace(microsecond=0)}
+    invoice_web_path = await write_invoice(load.model_copy(update=invoiced), settings)
 
     await db.update_load(
         load_id,
         {
+            **invoiced,
             "status": LoadStatus.INVOICED.value,
-            "invoice_number": invoice_num,
-            "bol_pdf_path": bol_web_path,
+            "bol_pdf_path": f"static/bols/{bol_filename}",
             "invoice_pdf_path": invoice_web_path,
-            "invoiced_at": invoiced_at,
         },
     )
 
     return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
+
+
+@router.post("/loads/{load_id}/rebuild-invoice")
+async def rebuild_invoice(request: Request, load_id: int):
+    """Re-renders an existing invoice after the load or its charges changed; same number and date."""
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    if not load.invoice_number:
+        raise HTTPException(status_code=409, detail="This load has no invoice yet")
+    # Invoices from before invoiced_at was recorded are dated today
+    load = load.model_copy(update={"invoiced_at": load.invoiced_at or datetime.now().replace(microsecond=0)})
+    invoice_web_path = await write_invoice(load, await db.get_all_settings())
+    await db.update_load(load_id, {"invoice_pdf_path": invoice_web_path})
+    return RedirectResponse(url=f"/loads/{load_id}?rebuilt=1#payment", status_code=303)
+
+
+@router.post("/loads/{load_id}/charges")
+async def add_charge(request: Request, load_id: int, description: str = Form(...), amount: float = Form(..., gt=0)):
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    if load.status == LoadStatus.PAID:
+        raise HTTPException(status_code=409, detail="This load is already paid")
+    description = description.strip()
+    if not description:
+        raise HTTPException(status_code=422, detail="Describe the charge, e.g. Detention")
+    charges = [*load.charges, Charge(description=description, amount=amount)]
+    await db.update_load(load_id, {"charges": charges})
+    return RedirectResponse(url=f"/loads/{load_id}#charges", status_code=303)
+
+
+@router.post("/loads/{load_id}/charges/{index}/delete")
+async def delete_charge(request: Request, load_id: int, index: int):
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    if load.status == LoadStatus.PAID:
+        raise HTTPException(status_code=409, detail="This load is already paid")
+    if not 0 <= index < len(load.charges):
+        raise HTTPException(status_code=404, detail="Charge not found")
+    charges = [charge for i, charge in enumerate(load.charges) if i != index]
+    await db.update_load(load_id, {"charges": charges})
+    return RedirectResponse(url=f"/loads/{load_id}#charges", status_code=303)
 
 
 @router.post("/loads/{load_id}/paid")

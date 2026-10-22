@@ -21,7 +21,7 @@
     {% if editing and data.invoice_pdf_path %}
     <div role="alert" class="alert alert-soft alert-warning mb-4 text-sm">
         {{ icon("circle-alert", "size-5") }}
-        <span>Invoice {{ data.invoice_number }} is already generated. It won't change with these edits.</span>
+        <span>Invoice {{ data.invoice_number }} is already generated. After saving, rebuild it from the load page.</span>
     </div>
     {% endif %}
 

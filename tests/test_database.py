@@ -162,6 +162,32 @@ async def test_unpaid_invoices_oldest_first(db):
     assert [load.id for load in await db.get_unpaid_invoices()] == [older.id, newer.id]
 
 
+async def test_charges_round_trip_and_update(db):
+    saved = await db.add_load(make_load(charges=[{"description": "Detention", "amount": 150.0}]))
+
+    assert (await db.get_load(saved.id)).total_amount == 2650.0
+
+    updated = await db.update_load(saved.id, {"charges": [*saved.charges, {"description": "Lumper", "amount": 50}]})
+
+    assert [charge.description for charge in updated.charges] == ["Detention", "Lumper"]
+    assert updated.total_amount == 2700.0
+
+
+async def test_migration_gives_existing_loads_no_charges(tmp_path, monkeypatch):
+    manager = await legacy_database(tmp_path, monkeypatch, version=6)
+    async with aiosqlite.connect(manager.db_path) as conn:
+        await conn.execute(
+            "INSERT INTO loads (broker_name, load_reference, rate_amount, pickup_location, pickup_date, "
+            "delivery_location, delivery_date, status) "
+            "VALUES ('Acme', 'PO-1', 1000, 'A', '2026-01-01', 'B', '2026-01-02', 'Active')"
+        )
+        await conn.commit()
+
+    await manager.init_db()
+
+    assert (await manager.get_load(1)).charges == []
+
+
 async def test_add_load_stamps_created_at(db):
     saved = await db.add_load(make_load())
 
