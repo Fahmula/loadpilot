@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import back_header %}
+
+{% block title %}Edit #{{ load.load_reference }} · LoadPilot{% endblock %}
+
+{% block content %}
+{{ back_header("Edit Load", "/loads/%d" % load.id, "#" ~ load.load_reference ~ " · " ~ load.broker_name) }}
+
+{% set editing = true %}
+{% set action = "/loads/%d/edit" % load.id %}
+{% include "partials/load_form.html" %}
+{% endblock %}

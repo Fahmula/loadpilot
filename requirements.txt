@@ -45,7 +45,9 @@ markupsafe==3.0.3
 opentelemetry-api==1.45.1
     # via fastapi
 pillow==12.3.0
-    # via weasyprint
+    # via
+    #   -r requirements.in
+    #   weasyprint
 pycparser==3.0
     # via cffi
 pydantic==2.14.1
@@ -56,6 +58,8 @@ pydantic-core==2.50.1
     # via pydantic
 pydyf==0.12.1
     # via weasyprint
+pypdf==6.21.2
+    # via -r requirements.in
 pyphen==0.17.2
     # via weasyprint
 python-dotenv==1.2.4

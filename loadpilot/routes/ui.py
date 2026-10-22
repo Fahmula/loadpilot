@@ -6,13 +6,14 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from weasyprint import HTML
 
 from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
 from loadpilot.analytics import build_analytics, recent_activity
 from loadpilot.config import BOL_DIR, INVOICE_DIR
+from loadpilot.documents import claim_pending, save_for_load, save_pending
 from loadpilot.geo import estimate_road_miles, nearest_place
 from loadpilot.models import Load, LoadStatus
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
@@ -100,13 +101,18 @@ async def parse_rate_con_html(request: Request, files: list[UploadFile] = File(.
             model = suggest_model(ai.provider, await asyncio.to_thread(list_models, ai.provider, ai.api_key)) or ""
 
         parsed_data = await asyncio.to_thread(extract_rate_con, ai, model, pages)
+        rate_con_file = await asyncio.to_thread(save_pending, pages)
     except AIError as e:
         return alert_response(str(e), status_code=400)
     except Exception as e:
         logger.error(f"Error parsing document: {e}", exc_info=True)
         return alert_response(f"Internal processing error: {e}", status_code=500)
 
-    context = {"data": parsed_data, "last_delivery": await last_delivery(request.app.state.db)}
+    context = {
+        "data": parsed_data,
+        "rate_con_file": rate_con_file,
+        "last_delivery": await last_delivery(request.app.state.db),
+    }
     return templates.TemplateResponse(request=request, name="partials/load_form.html", context=context)
 
 
@@ -144,44 +150,77 @@ async def geo_estimate(origin: str = "", destination: str = ""):
     return {"miles": estimate_road_miles(origin, destination)}
 
 
-@router.post("/create-load-web/")
-async def create_load_web(
-    request: Request,
+def load_form(
     broker_name: str = Form(...),
     broker_email: str = Form(""),
     rate_amount: float = Form(...),
     load_reference: str = Form(...),
     pickup_location: str = Form(...),
-    pickup_date: str = Form(...),
+    pickup_date: date = Form(...),
     delivery_location: str = Form(...),
-    delivery_date: str = Form(...),
+    delivery_date: date = Form(...),
     loaded_miles: int = Form(...),
     empty_miles: int = Form(0),
     deadhead_origin: str = Form(""),
-    notes: str = Form(None),
+    notes: str = Form(""),
+) -> dict:
+    """The load fields shared by the add and edit forms (templates/partials/load_form.html)."""
+    return {
+        "broker_name": broker_name,
+        "broker_email": broker_email.strip() or None,
+        "rate_amount": rate_amount,
+        "load_reference": load_reference,
+        "pickup_location": pickup_location,
+        "pickup_date": pickup_date,
+        "delivery_location": delivery_location,
+        "delivery_date": delivery_date,
+        "loaded_miles": loaded_miles,
+        "empty_miles": empty_miles,
+        "deadhead_origin": deadhead_origin.strip() or None,
+        "notes": notes or None,
+    }
+
+
+@router.post("/create-load-web/")
+async def create_load_web(request: Request, fields: dict = Depends(load_form), rate_con_file: str = Form("")):
+    db = request.app.state.db
+    load = await db.add_load(Load(**fields, status=LoadStatus.ACTIVE))
+
+    rate_con_path = await asyncio.to_thread(claim_pending, rate_con_file, load.id)
+    if rate_con_path:
+        await db.update_load(load.id, {"rate_con_pdf_path": rate_con_path})
+    return Response(headers={"HX-Redirect": f"/loads/{load.id}"})
+
+
+@router.get("/loads/{load_id}/edit", response_class=HTMLResponse)
+async def edit_load_page(request: Request, load_id: int):
+    load = await get_load_or_404(request.app.state.db, load_id)
+    return templates.TemplateResponse(request=request, name="load_edit.html", context={"data": load, "load": load})
+
+
+@router.post("/loads/{load_id}/edit")
+async def edit_load(
+    request: Request, load_id: int, fields: dict = Depends(load_form), actual_delivery_date: date | None = Form(None)
 ):
     db = request.app.state.db
-    p_date = datetime.strptime(pickup_date, "%Y-%m-%d").date()
-    d_date = datetime.strptime(delivery_date, "%Y-%m-%d").date()
+    load = await get_load_or_404(db, load_id)
+    # Only delivered loads have a delivery day to correct; it decides which period earnings count toward
+    if load.actual_delivery_date and actual_delivery_date:
+        fields["actual_delivery_date"] = actual_delivery_date
+    await db.update_load(load_id, fields)
+    return Response(headers={"HX-Redirect": f"/loads/{load_id}"})
 
-    load = Load(
-        broker_name=broker_name,
-        broker_email=broker_email.strip() or None,
-        rate_amount=rate_amount,
-        load_reference=load_reference,
-        pickup_location=pickup_location,
-        pickup_date=p_date,
-        delivery_location=delivery_location,
-        delivery_date=d_date,
-        loaded_miles=loaded_miles,
-        empty_miles=empty_miles,
-        deadhead_origin=deadhead_origin.strip() or None,
-        notes=notes,
-        status=LoadStatus.ACTIVE,
-    )
 
-    load = await db.add_load(load)
-    return Response(headers={"HX-Redirect": f"/loads/{load.id}"})
+@router.post("/loads/{load_id}/rate-con")
+async def attach_rate_con(request: Request, load_id: int, rate_con: UploadFile = File(...)):
+    db = request.app.state.db
+    await get_load_or_404(db, load_id)
+    page = (await rate_con.read(), rate_con.content_type or "application/octet-stream", rate_con.filename)
+    path = await asyncio.to_thread(save_for_load, [page], load_id)
+    if not path:
+        raise HTTPException(status_code=400, detail="Upload a PDF or a photo of the rate con")
+    await db.update_load(load_id, {"rate_con_pdf_path": path})
+    return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
 
 
 @router.post("/update-load-status/{load_id}/{new_status}")
