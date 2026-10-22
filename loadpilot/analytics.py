@@ -3,12 +3,13 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
-from loadpilot.models import Load
+from loadpilot.models import Load, LoadStatus
 
 PERIODS = {"week": "This Week", "month": "This Month", "year": "This Year", "all": "All Time"}
 PREVIOUS_LABELS = {"week": "last week", "month": "last month", "year": "last year"}
 TREND_MONTHS = 6
 TOP_BROKERS = 5
+DEFAULT_PAYMENT_TERMS = 30
 
 
 @dataclass
@@ -136,10 +137,43 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
     }
 
 
+def payment_terms(settings: dict) -> int:
+    """Days a broker has to pay an invoice (Settings > Payments & Banking), 30 unless set."""
+    try:
+        return max(int(settings.get("payment_terms_days") or DEFAULT_PAYMENT_TERMS), 0)
+    except ValueError:
+        return DEFAULT_PAYMENT_TERMS
+
+
+def due_date(load: Load, terms: int) -> date | None:
+    return load.invoiced_at.date() + timedelta(days=terms) if load.invoiced_at else None
+
+
+def days_overdue(load: Load, terms: int, today: date | None = None) -> int:
+    """Days past due for an unpaid invoice; 0 while it's still within terms, or once it's paid."""
+    due = due_date(load, terms)
+    if load.status != LoadStatus.INVOICED or not due:
+        return 0
+    return max(((today or date.today()) - due).days, 0)
+
+
+def receivables(unpaid: list[Load], terms: int, today: date | None = None) -> dict:
+    """What brokers still owe: the dashboard's awaiting-payment card."""
+    overdue = [load for load in unpaid if days_overdue(load, terms, today)]
+    return {
+        "loads": unpaid,
+        "total": sum(load.rate_amount for load in unpaid),
+        "overdue_count": len(overdue),
+        "overdue_total": sum(load.rate_amount for load in overdue),
+    }
+
+
 def recent_activity(loads: list[Load], limit: int = 5) -> list[dict]:
-    """Newest-first events (added, delivered, invoiced) for the dashboard."""
+    """Newest-first events (added, delivered, invoiced, paid) for the dashboard."""
     events = []
     for load in loads:
+        if load.paid_at:
+            events.append({"kind": "paid", "at": datetime.combine(load.paid_at, time()), "load": load})
         if load.invoiced_at:
             events.append({"kind": "invoiced", "at": load.invoiced_at, "load": load})
         if load.actual_delivery_date:

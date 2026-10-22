@@ -54,16 +54,21 @@
     <div class="content">
         <table class="meta">
             <tr>
-                <td style="width: 50%;">
+                <td style="width: 40%;">
                     <div class="label">Bill To</div>
                     <div class="value">{{ load.broker_name }}</div>
                     {% if load.broker_email %}<div class="muted">{{ load.broker_email }}</div>{% endif %}
                 </td>
-                <td style="width: 25%;">
+                <td style="width: 20%;">
                     <div class="label">Invoice Date</div>
                     <div class="value">{{ date_today }}</div>
                 </td>
-                <td style="width: 25%;">
+                <td style="width: 20%;">
+                    <div class="label">Due Date</div>
+                    <div class="value">{{ due_date }}</div>
+                    <div class="muted">Net {{ terms }}</div>
+                </td>
+                <td style="width: 20%;">
                     <div class="label">Load #</div>
                     <div class="value">{{ load.load_reference }}</div>
                 </td>

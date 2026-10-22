@@ -26,6 +26,8 @@
             <div class="flex min-w-0 items-center gap-2">
                 <span class="truncate text-lg font-bold tracking-tight">#{{ load.load_reference }}</span>
                 {{ status_badge(load.status) }}
+                {% set overdue = days_overdue(load, terms) %}
+                {% if overdue %}<span class="badge badge-soft badge-error badge-sm whitespace-nowrap font-semibold">{{ overdue }}d overdue</span>{% endif %}
             </div>
             <span class="shrink-0 text-lg font-bold text-success">{{ load.rate_amount | money }}</span>
         </div>

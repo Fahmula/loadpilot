@@ -1,9 +1,21 @@
+from datetime import date
+
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from loadpilot.models import Load, LoadStatus, LoadUpdate
 
 router = APIRouter(prefix="/api/loads", tags=["Loads"])
+payments_router = APIRouter(prefix="/api/payments", tags=["Payments"])
+
+
+class Payment(BaseModel):
+    """A broker payment reported by another app (bank feed, bookkeeping), matched to its invoice."""
+
+    invoice_number: str
+    amount: float = Field(gt=0)
+    paid_at: date | None = None  # defaults to today
 
 
 @router.post("/", response_model=Load)
@@ -46,3 +58,15 @@ async def delete_load(load_id: int, request: Request):
     if not success:
         raise HTTPException(status_code=404, detail="Load not found")
     return {"message": "Load deleted successfully"}
+
+
+@payments_router.post("/", response_model=Load)
+async def record_payment(payment: Payment, request: Request):
+    db = request.app.state.db
+    load = await db.get_load_by_invoice_number(payment.invoice_number)
+    if not load:
+        raise HTTPException(status_code=404, detail="No load has that invoice number")
+    if load.status != LoadStatus.INVOICED:
+        raise HTTPException(status_code=409, detail=f"Load is {load.status.value}, not awaiting payment")
+    update = {"status": LoadStatus.PAID, "paid_at": payment.paid_at or date.today(), "amount_paid": payment.amount}
+    return await db.update_load(load.id, update)

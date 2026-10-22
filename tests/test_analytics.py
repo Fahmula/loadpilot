@@ -2,7 +2,15 @@ from datetime import date, datetime
 
 import pytest
 
-from loadpilot.analytics import build_analytics, previous_window, recent_activity
+from loadpilot.analytics import (
+    build_analytics,
+    days_overdue,
+    due_date,
+    payment_terms,
+    previous_window,
+    receivables,
+    recent_activity,
+)
 from loadpilot.models import LoadStatus
 
 from .conftest import make_load
@@ -119,3 +127,49 @@ def test_all_in_rpm_without_miles_is_zero():
 
     assert current.all_in_rpm == 0.0
     assert current.deadhead_pct == 0.0
+
+
+def invoiced(day: date, rate: float = 1000.0):
+    return make_load(
+        status=LoadStatus.INVOICED, invoiced_at=datetime.combine(day, datetime.min.time()), rate_amount=rate
+    )
+
+
+@pytest.mark.parametrize(
+    ("settings", "terms"),
+    [({}, 30), ({"payment_terms_days": "15"}, 15), ({"payment_terms_days": ""}, 30), ({"payment_terms_days": "x"}, 30)],
+)
+def test_payment_terms(settings, terms):
+    assert payment_terms(settings) == terms
+
+
+def test_invoice_is_overdue_after_terms():
+    load = invoiced(date(2026, 9, 10))
+
+    assert due_date(load, 30) == date(2026, 10, 10)
+    assert days_overdue(load, 30, TODAY) == 10
+    assert days_overdue(load, 45, TODAY) == 0
+
+
+def test_paid_or_undated_invoices_are_never_overdue():
+    paid = invoiced(date(2026, 1, 1)).model_copy(update={"status": LoadStatus.PAID})
+    legacy = make_load(status=LoadStatus.INVOICED)  # invoiced before invoiced_at was recorded
+
+    assert days_overdue(paid, 30, TODAY) == 0
+    assert days_overdue(legacy, 30, TODAY) == 0
+    assert due_date(legacy, 30) is None
+
+
+def test_receivables_totals_and_overdue():
+    unpaid = [invoiced(date(2026, 9, 1), rate=2000), invoiced(date(2026, 10, 15), rate=500)]
+
+    owed = receivables(unpaid, 30, TODAY)
+
+    assert owed["total"] == 2500
+    assert (owed["overdue_count"], owed["overdue_total"]) == (1, 2000)
+
+
+def test_recent_activity_includes_payments():
+    load = invoiced(date(2026, 9, 6)).model_copy(update={"paid_at": date(2026, 10, 2), "amount_paid": 980.0})
+
+    assert recent_activity([load])[0]["kind"] == "paid"
