@@ -115,6 +115,56 @@ def test_geo_requires_login(anon_client):
     assert response.status_code in (303, 401)
 
 
+MULTI_STOP = {
+    "stop_kind": ["pickup", "delivery", "delivery"],
+    "stop_location": ["Waco, TX", "  ", "Macon, GA"],  # the blank row is dropped
+    "stop_date": ["2026-10-01", "", ""],
+}
+
+
+def test_create_multi_stop_load(client):
+    client.post("/create-load-web/", data={**LOAD_FORM, **MULTI_STOP})
+
+    load = client.get("/api/loads/").json()[0]
+    assert load["stops"] == [
+        {"kind": "pickup", "location": "Waco, TX", "stop_date": "2026-10-01"},
+        {"kind": "delivery", "location": "Macon, GA", "stop_date": None},
+    ]
+    detail = client.get(f"/loads/{load['id']}").text
+    assert "Waco, TX" in detail
+    assert "Macon, GA" in detail
+    assert "+2 stops" in client.get("/loads").text
+
+
+def test_bad_stops_are_rejected(client):
+    unknown_type = {"stop_kind": ["layover"], "stop_location": ["Waco, TX"], "stop_date": [""]}
+    missing_date_field = {"stop_kind": ["pickup"], "stop_location": ["Waco, TX"]}
+
+    assert client.post("/create-load-web/", data={**LOAD_FORM, **unknown_type}).status_code == 422
+    assert client.post("/create-load-web/", data={**LOAD_FORM, **missing_date_field}).status_code == 422
+    assert client.get("/api/loads/").json() == []
+
+
+def test_edit_replaces_stops(client, db_path):
+    load = seed(db_path, stops=[{"kind": "delivery", "location": "Macon, GA"}])
+    assert 'value="Macon, GA"' in client.get(f"/loads/{load.id}/edit").text
+
+    client.post(f"/loads/{load.id}/edit", data=LOAD_FORM)  # every stop row removed
+
+    assert client.get(f"/api/loads/{load.id}").json()["stops"] == []
+
+
+def test_scanned_stops_prefill_the_form(client, monkeypatch):
+    configure_ai(client)
+    scanned = {**LOAD_FORM, "stops": [{"kind": "pickup", "location": "Waco, TX", "stop_date": "2026-10-01"}]}
+    monkeypatch.setattr(ui, "extract_rate_con", lambda ai, model, pages: scanned)
+
+    html = client.post("/parse-rate-con-html/", files={"files": ("rc.png", b"img", "image/png")}).text
+
+    assert 'name="stop_location" class="input w-full" placeholder="Stop (City, ST)" value="Waco, TX"' in html
+    assert '<option value="pickup" selected>' in html
+
+
 def test_mark_delivered_sets_actual_delivery_date(client, db_path):
     load = seed(db_path)
 
@@ -255,6 +305,15 @@ def test_invoice_bills_rate_plus_charges(client, db_path, rendered_invoices):
     assert "Detention" in rendered_invoices[0]
     assert "$150.00" in rendered_invoices[0]
     assert "$2,650.00" in rendered_invoices[0]  # total due
+
+
+def test_invoice_lists_extra_stops(client, db_path, rendered_invoices):
+    stops = [{"kind": "delivery", "location": "Macon, GA", "stop_date": "2026-10-02"}]
+    load = seed(db_path, status=LoadStatus.DELIVERED, stops=stops)
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+
+    assert "Stop: Drop Macon, GA, Oct 02, 2026" in rendered_invoices[0]
 
 
 def test_rebuild_invoice_keeps_number_and_date(client, db_path, rendered_invoices):

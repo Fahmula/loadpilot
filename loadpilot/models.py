@@ -12,6 +12,19 @@ class LoadStatus(StrEnum):
     PAID = "Paid"
 
 
+class StopKind(StrEnum):
+    PICKUP = "pickup"
+    DELIVERY = "delivery"
+
+
+class Stop(BaseModel):
+    """A stop between the first pickup and the final delivery of a multi-stop load."""
+
+    kind: StopKind
+    location: str = Field(min_length=1)
+    stop_date: date | None = None
+
+
 class Charge(BaseModel):
     """An extra charge billed on top of the rate, e.g. detention, layover, a lumper fee or TONU."""
 
@@ -44,11 +57,21 @@ class Load(BaseModel):
     paid_at: date | None = None
     amount_paid: float | None = None
     charges: list[Charge] = []
+    stops: list[Stop] = []
 
     @property
     def total_amount(self) -> float:
         """The rate plus extra charges: what the invoice bills and the broker owes."""
         return self.rate_amount + sum(charge.amount for charge in self.charges)
+
+    @property
+    def route_stops(self) -> list[tuple[StopKind, str, date | None]]:
+        """Every stop in route order, first pickup to final delivery, as (kind, location, date)."""
+        return [
+            (StopKind.PICKUP, self.pickup_location, self.pickup_date),
+            *((stop.kind, stop.location, stop.stop_date) for stop in self.stops),
+            (StopKind.DELIVERY, self.delivery_location, self.actual_delivery_date or self.delivery_date),
+        ]
 
     @property
     def total_miles(self) -> int:
@@ -85,3 +108,4 @@ class LoadUpdate(BaseModel):
     paid_at: date | None = None
     amount_paid: float | None = None
     charges: list[Charge] | None = None
+    stops: list[Stop] | None = None

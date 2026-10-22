@@ -89,6 +89,9 @@
                     <td>
                         <strong>Freight Transportation Services</strong><br>
                         <span class="muted">Load #{{ load.load_reference }}{% if load.loaded_miles %} · {{ "{:,}".format(load.loaded_miles) }} loaded mi{% endif %}</span>
+                        {% for stop in load.stops %}
+                        <br><span class="muted">Stop: {{ "Pickup" if stop.kind == "pickup" else "Drop" }} {{ stop.location }}{% if stop.stop_date %}, {{ stop.stop_date.strftime("%b %d, %Y") }}{% endif %}</span>
+                        {% endfor %}
                     </td>
                     <td>{{ load.pickup_location }}<br><span class="muted">{{ load.pickup_date.strftime("%b %d, %Y") }}</span></td>
                     <td>{{ load.delivery_location }}<br><span class="muted">{{ (load.actual_delivery_date or load.delivery_date).strftime("%b %d, %Y") }}</span></td>

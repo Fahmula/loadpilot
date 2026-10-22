@@ -1,5 +1,28 @@
 {# Load form: a new load prefilled by AI extraction (or blank for manual entry), or an existing load when editing. #}
 {% set editing = editing | default(false) %}
+{# One stop between the first pickup and the final delivery; also the template for adding one #}
+{% macro stop_row(stop=none) -%}
+<div class="rounded-xl border border-base-300/70 p-3" data-stop>
+    <div class="mb-3 flex items-center gap-2">
+        <select name="stop_kind" class="select select-sm w-28" aria-label="Stop type">
+            <option value="pickup" {% if stop and stop.kind == "pickup" %}selected{% endif %}>Pickup</option>
+            <option value="delivery" {% if not stop or stop.kind == "delivery" %}selected{% endif %}>Drop</option>
+        </select>
+        <span class="flex-1 text-xs text-base-content/50">Extra stop</span>
+        <button type="button" class="btn btn-ghost btn-xs" data-remove-stop>{{ icon("x", "size-4") }} Remove</button>
+    </div>
+    <div class="grid grid-cols-[1fr_auto] gap-3">
+        <label class="floating-label">
+            <span>Stop (City, ST)</span>
+            <input type="text" name="stop_location" class="input w-full" placeholder="Stop (City, ST)" value="{{ stop.location if stop else '' }}" required>
+        </label>
+        <label class="floating-label">
+            <span>Stop date</span>
+            <input type="date" name="stop_date" class="input w-40" value="{{ (stop.stop_date or '') if stop else '' }}">
+        </label>
+    </div>
+</div>
+{%- endmacro %}
 <form id="new-load-form" data-last-delivery="{{ last_delivery or '' }}" {% if not editing %}data-auto-locate{% endif %}
       hx-post="{{ action | default('/create-load-web/') }}" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
     <div class="mb-5 flex items-center gap-3">
@@ -60,6 +83,15 @@
                 <span>Pickup date</span>
                 <input type="date" name="pickup_date" class="input w-40" value="{{ data.pickup_date or '' }}" required>
             </label>
+        </div>
+        <div class="space-y-3" data-stops>
+            {% for stop in data.stops or [] %}{{ stop_row(stop) }}{% endfor %}
+        </div>
+        <template data-stop-template>{{ stop_row() }}</template>
+        <button type="button" class="btn btn-ghost btn-sm justify-self-start rounded-lg text-primary" data-add-stop>
+            {{ icon("plus", "size-4") }} Add stop
+        </button>
+        <div class="grid grid-cols-[1fr_auto] gap-3">
             <label class="floating-label">
                 <span>Delivery (City, ST)</span>
                 <input type="text" name="delivery_location" class="input w-full" placeholder="Delivery (City, ST)" value="{{ data.delivery_location or '' }}" required>
@@ -140,6 +172,20 @@
         }
         [rate, miles, empty].forEach(function (input) { input.addEventListener("input", update); });
         update();
+    })();
+
+    // Extra stops between the first pickup and the final delivery
+    (function () {
+        var form = document.getElementById("new-load-form");
+        var list = form.querySelector("[data-stops]"), template = form.querySelector("[data-stop-template]");
+        form.querySelector("[data-add-stop]").addEventListener("click", function () {
+            list.appendChild(template.content.cloneNode(true));
+            list.lastElementChild.querySelector("[name=stop_location]").focus();
+        });
+        list.addEventListener("click", function (event) {
+            var remove = event.target.closest("[data-remove-stop]");
+            if (remove) remove.closest("[data-stop]").remove();
+        });
     })();
 
     // Picking a broker hauled for before fills in the email used last time (unless one was typed)

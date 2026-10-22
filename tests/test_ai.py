@@ -300,6 +300,28 @@ def test_normalize_extraction_blanks_unusable_values():
     assert data["broker_name"] == ""
 
 
+def test_normalize_extraction_keeps_extra_stops_in_order():
+    data = normalize_extraction(
+        {
+            "extra_stops": [
+                {"type": "Pickup", "location": "Waco, TX", "date": "10/22/2026"},
+                {"type": "drop", "location": "Austin, TX", "date": None},
+                {"type": "Consignee", "location": "San Marcos, TX"},
+                {"type": "delivery", "location": ""},  # nothing to go on
+                "Houston, TX",
+            ]
+        }
+    )
+
+    assert data["stops"] == [
+        {"kind": "pickup", "location": "Waco, TX", "stop_date": "2026-10-22"},
+        {"kind": "delivery", "location": "Austin, TX", "stop_date": ""},
+        {"kind": "delivery", "location": "San Marcos, TX", "stop_date": ""},
+    ]
+    assert normalize_extraction({"extra_stops": "none"})["stops"] == []
+    assert normalize_extraction(REPLY)["stops"] == []
+
+
 def test_build_prompt_includes_date_and_extra_instructions():
     prompt = build_prompt("Use Shipper Ref", today=date(2026, 10, 20))
 
