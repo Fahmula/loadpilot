@@ -50,15 +50,15 @@ pillow==13.0.0
     #   weasyprint
 pycparser==3.0
     # via cffi
-pydantic==2.14.1
+pydantic==2.14.2
     # via
     #   -r requirements.in
     #   fastapi
-pydantic-core==2.50.1
+pydantic-core==2.50.2
     # via pydantic
 pydyf==0.12.1
     # via weasyprint
-pypdf==6.21.2
+pypdf==6.21.4
     # via -r requirements.in
 pyphen==0.17.2
     # via weasyprint
