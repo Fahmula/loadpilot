@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import icon_tile, page_hero %}
+{% from "macros/ui.html" import icon_tile, page_header %}
 
 {% block title %}Settings · LoadPilot{% endblock %}
 
 {% block content %}
-{{ page_hero("Settings", "Company, AI scanning and payments.") }}
+{{ page_header("Settings", "Company, AI scanning and payments.") }}
 
 <div class="mt-5 space-y-4">
     {% for section in ("company", "ai", "bank") %}

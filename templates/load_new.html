@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import page_hero %}
+{% from "macros/ui.html" import page_header %}
 
 {% block title %}Add Load · LoadPilot{% endblock %}
 
 {% block content %}
-{{ page_hero("Add Load", "Scan a rate confirmation or enter it yourself.", "/loads") }}
+{{ page_header("Add Load", "Scan a rate confirmation or enter it yourself.", "/loads") }}
 
 <div id="add-load-start" class="mt-5 space-y-4">
     <form class="card-soft p-5" hx-post="/parse-rate-con-html/" hx-encoding="multipart/form-data"

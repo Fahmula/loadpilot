@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import page_hero %}
+{% from "macros/ui.html" import page_header %}
 
 {% block title %}Edit {{ load.load_reference }} · LoadPilot{% endblock %}
 
 {% block content %}
-{{ page_hero("Edit Load", load.load_reference ~ " · " ~ load.broker_name, "/loads/%d" % load.id) }}
+{{ page_header("Edit Load", load.load_reference ~ " · " ~ load.broker_name, "/loads/%d" % load.id) }}
 
 {% set editing = true %}
 {% set action = "/loads/%d/edit" % load.id %}

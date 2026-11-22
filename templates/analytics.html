@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import icon_tile, page_hero %}
+{% from "macros/ui.html" import icon_tile, page_header %}
 
 {% block title %}Analytics · LoadPilot{% endblock %}
 
@@ -30,9 +30,9 @@
 
 {% block content %}
 {% set a = analytics %}
-{% call page_hero("Analytics", "Compared with the same point " ~ a.compare_label ~ "." if a.compare_label else "Every delivered load, all time.") %}
+{% call page_header("Analytics", "Compared with the same point " ~ a.compare_label ~ "." if a.compare_label else "Every delivered load, all time.") %}
     <details class="dropdown dropdown-end">
-        <summary class="btn btn-sm h-10 rounded-xl border-white/20 bg-white/10 px-4 font-medium text-white hover:bg-white/20">
+        <summary class="btn btn-sm h-10 rounded-xl border-base-300 bg-base-100 px-4 font-medium">
             {{ a.period_label }} {{ icon("chevron-down", "size-4") }}
         </summary>
         <ul class="menu dropdown-content z-10 mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 text-base-content shadow-xl">

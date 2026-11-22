@@ -8,7 +8,7 @@
 }
 
 /* Dark navy with amber accents is the default look. The light theme keeps the same accents;
-   headers with the truck art (.hero-art) stay dark in both. */
+   the dashboard's photo header (.hero-art) stays dark in both. */
 @plugin "./vendor/daisyui-theme.mjs" {
   name: "loadpilot-dark";
   default: true;
@@ -81,12 +81,11 @@
 }
 
 @layer components {
-  /* Page header over the sunset truck art (static/img/hero-truck.svg). Always dark; in the dark theme it
-     blends into the page. --art-height trims the art so it fades out above anything placed below it. */
-  /* No overflow: hidden, so menus can open past the header; the art layers follow its rounded corners instead */
+  /* Dashboard header over the truck-at-sunset photo (static/img/dashboard-hero.webp). Always dark; in the
+     dark theme it blends into the page. --art-height trims the photo so it fades out above the button below. */
   .hero-art {
     position: relative;
-    z-index: 1;
+    z-index: 1; /* its own stacking context, so the photo layers below sit behind the text but above the page */
     background-color: #0b111c;
     color: #f3f6fb;
   }
@@ -97,7 +96,7 @@
     z-index: -2;
     border-radius: inherit;
     height: var(--art-height, 100%);
-    background: url("/static/img/hero-truck.svg") right center / cover no-repeat;
+    background: url("/static/img/dashboard-hero.webp") right center / cover no-repeat;
     mask-image: linear-gradient(to bottom, black 60%, transparent);
   }
   /* Darkens the left side so titles stay readable over the art */
@@ -128,7 +127,7 @@
     box-shadow: 0 12px 28px -14px var(--color-primary);
   }
 
-  /* Rounded amber square with the truck, used as the app logo in headers */
+  /* Rounded amber square with the truck next to "LoadPilot" in the dashboard header */
   .logo-tile {
     @apply grid shrink-0 place-items-center rounded-xl bg-primary text-primary-content;
     background-image: linear-gradient(180deg, rgb(255 255 255 / 0.22), transparent);

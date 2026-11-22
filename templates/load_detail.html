@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import status_badge, page_hero, icon_tile %}
+{% from "macros/ui.html" import status_badge, page_header, icon_tile %}
 
 {% block title %}{{ load.load_reference }} · LoadPilot{% endblock %}
 
@@ -45,9 +45,9 @@
     {% set summary = "Draft" %}
 {% endif %}
 
-{% call page_hero("Load Details", summary, "/loads") %}
+{% call page_header("Load Details", summary, "/loads") %}
     {{ status_badge(load.status, "badge-md") }}
-    <a href="/loads/{{ load.id }}/edit" class="btn btn-circle btn-ghost btn-sm text-white hover:bg-white/10" aria-label="Edit load" title="Edit load">{{ icon("pencil", "size-5") }}</a>
+    <a href="/loads/{{ load.id }}/edit" class="btn btn-circle btn-ghost" aria-label="Edit load" title="Edit load">{{ icon("pencil", "size-5") }}</a>
 {% endcall %}
 
 <div class="mt-5 space-y-4">

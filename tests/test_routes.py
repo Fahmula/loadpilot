@@ -41,9 +41,13 @@ def test_health_reports_version(client):
 
 
 def test_pwa_assets_are_served(client):
-    assert client.get("/manifest.json").json()["name"] == "LoadPilot"
+    manifest = client.get("/manifest.json").json()
+    assert manifest["name"] == "LoadPilot"
     assert client.get("/sw.js").status_code == 200
-    assert client.get("/static/icon-192.png").headers["content-type"] == "image/png"
+    # Home screens that crop icons to their own shape need a maskable one
+    assert {icon["purpose"] for icon in manifest["icons"]} == {"any", "maskable"}
+    for path in [icon["src"] for icon in manifest["icons"]] + ["/static/apple-touch-icon.png"]:
+        assert client.get(path).headers["content-type"] == "image/png", path
 
 
 def test_pages_render(client):
