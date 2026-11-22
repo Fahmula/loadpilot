@@ -1,7 +1,7 @@
-"""Earnings analytics and the dashboard's activity feed, computed from loads in Python."""
+"""Earnings analytics and receivables, computed from loads in Python."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from loadpilot.models import Load, LoadStatus
 
@@ -166,21 +166,3 @@ def receivables(unpaid: list[Load], terms: int, today: date | None = None) -> di
         "overdue_count": len(overdue),
         "overdue_total": sum(load.total_amount for load in overdue),
     }
-
-
-def recent_activity(loads: list[Load], limit: int = 5) -> list[dict]:
-    """Newest-first events (added, delivered, invoiced, paid) for the dashboard."""
-    events = []
-    for load in loads:
-        if load.paid_at:
-            events.append({"kind": "paid", "at": datetime.combine(load.paid_at, time()), "load": load})
-        if load.invoiced_at:
-            events.append({"kind": "invoiced", "at": load.invoiced_at, "load": load})
-        if load.actual_delivery_date:
-            events.append(
-                {"kind": "delivered", "at": datetime.combine(load.actual_delivery_date, time()), "load": load}
-            )
-        if load.created_at:
-            events.append({"kind": "added", "at": load.created_at, "load": load})
-    events.sort(key=lambda event: event["at"], reverse=True)
-    return events[:limit]

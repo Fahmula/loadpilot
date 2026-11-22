@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import back_header %}
+{% from "macros/ui.html" import page_hero %}
 
-{% block title %}Edit #{{ load.load_reference }} · LoadPilot{% endblock %}
+{% block title %}Edit {{ load.load_reference }} · LoadPilot{% endblock %}
 
 {% block content %}
-{{ back_header("Edit Load", "/loads/%d" % load.id, "#" ~ load.load_reference ~ " · " ~ load.broker_name) }}
+{{ page_hero("Edit Load", load.load_reference ~ " · " ~ load.broker_name, "/loads/%d" % load.id) }}
 
 {% set editing = true %}
 {% set action = "/loads/%d/edit" % load.id %}
-{% include "partials/load_form.html" %}
+<div class="mt-5">
+    {% include "partials/load_form.html" %}
+</div>
 {% endblock %}

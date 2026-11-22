@@ -2,8 +2,8 @@
 {# One settings card in view or edit mode. HTMX swaps the whole card when switching modes or saving. #}
 {% set meta = {
     "company": ("Company Information", "building-2", "primary"),
-    "ai": ("AI Configuration", "cpu", "secondary"),
-    "bank": ("Payments & Banking", "landmark", "success"),
+    "ai": ("AI Configuration", "cpu", "primary"),
+    "bank": ("Payments & Banking", "landmark", "primary"),
 }[section] %}
 {% set target = "#settings-" ~ section %}
 

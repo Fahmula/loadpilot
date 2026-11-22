@@ -7,69 +7,40 @@
 </a>
 {%- endmacro %}
 
+{# Tinted, outlined status pill, e.g. "Active" in amber #}
 {% macro status_badge(status, size="badge-sm") -%}
 {% set style, label = status_styles[status] %}
-<span class="badge badge-soft {{ style }} {{ size }} gap-1 font-semibold whitespace-nowrap">
-    <span class="size-1.5 rounded-full bg-current"></span>{{ label }}
-</span>
+<span class="badge badge-soft {{ style }} {{ size }} rounded-lg border-current/45 font-semibold whitespace-nowrap">{{ label }}</span>
 {%- endmacro %}
 
-{# Pickup → delivery with coloured pins, as in "Midland, TX ··→ Smiley, TX" #}
-{% macro route(load, labels=False, size="text-base") -%}
-<div class="flex items-center gap-2 {{ size }}">
-    <div class="flex min-w-0 flex-1 items-start gap-1.5">
-        {{ icon("map-pin", "mt-0.5 size-5 shrink-0 text-primary") }}
-        <div class="min-w-0">
-            <div class="truncate font-semibold">{{ load.pickup_location }}</div>
-            {% if labels %}<div class="text-xs text-base-content/60">Pickup</div>{% endif %}
-        </div>
+{# Page header over the truck art. Pages with back_href show a back arrow; the caller fills the top-right corner. #}
+{% macro page_hero(title, subtitle=None, back_href=None) -%}
+<section class="hero-art -mx-4 rounded-b-[2rem] px-5 pb-9 pt-[calc(env(safe-area-inset-top)+1rem)] sm:mx-0 sm:mt-4 sm:rounded-[2rem]">
+    <div class="flex min-h-10 items-center gap-2.5">
+        {% if back_href %}
+        <a href="{{ back_href }}" class="btn btn-circle btn-ghost btn-sm -ml-1.5 text-white hover:bg-white/10" aria-label="Back">{{ icon("arrow-left", "size-6") }}</a>
+        <span class="text-lg font-semibold">LoadPilot</span>
+        {% else %}
+        <a href="/" class="logo-tile size-9" aria-label="Dashboard">{{ icon("truck", "size-5") }}</a>
+        <span class="text-lg font-bold tracking-tight">LoadPilot</span>
+        {% endif %}
+        <div class="ml-auto flex items-center gap-2">{{ caller() if caller }}</div>
     </div>
-    <div class="flex shrink-0 flex-col items-center">
-        <div class="flex items-center text-base-content/40" aria-hidden="true">
-            <span class="w-5 border-t-2 border-dotted border-current sm:w-8"></span>
-            {{ icon("chevron-right", "-ml-1 size-4") }}
-        </div>
-        {% if load.stops %}<span class="whitespace-nowrap text-xs font-medium text-base-content/60">+{{ load.stops | length }} stop{{ "s" if load.stops | length > 1 }}</span>{% endif %}
-    </div>
-    <div class="flex min-w-0 flex-1 items-start gap-1.5">
-        {{ icon("map-pin", "mt-0.5 size-5 shrink-0 text-success") }}
-        <div class="min-w-0">
-            <div class="truncate font-semibold">{{ load.delivery_location }}</div>
-            {% if labels %}<div class="text-xs text-base-content/60">Delivery</div>{% endif %}
-        </div>
-    </div>
-</div>
-{%- endmacro %}
-
-{% macro stat(label, value, value_class="") -%}
-<div class="min-w-0">
-    <div class="text-xs text-base-content/60">{{ label }}</div>
-    <div class="truncate text-lg font-bold tracking-tight {{ value_class }}">{{ value }}</div>
-</div>
-{%- endmacro %}
-
-{# Sub-page header with a back button, e.g. Load details / Add load #}
-{% macro back_header(title, back_href, subtitle=None) -%}
-<header class="mb-5 flex items-center gap-3">
-    <a href="{{ back_href }}" class="btn btn-circle btn-ghost btn-sm -ml-1" aria-label="Back">{{ icon("chevron-left", "size-6") }}</a>
-    <div class="min-w-0 flex-1">
-        <h1 class="truncate text-2xl font-bold tracking-tight">{{ title }}</h1>
-        {% if subtitle %}<p class="truncate text-sm text-base-content/60">{{ subtitle }}</p>{% endif %}
-    </div>
-    {{ caller() if caller }}
-</header>
+    <h1 class="mt-5 truncate text-3xl font-extrabold tracking-tight sm:text-4xl">{{ title }}</h1>
+    {% if subtitle %}<p class="mt-1 truncate text-white/70">{{ subtitle }}</p>{% endif %}
+</section>
 {%- endmacro %}
 
 {% macro empty_state(icon_name, title, message) -%}
 <div class="card-soft flex flex-col items-center px-6 py-10 text-center">
-    <div class="mb-3 grid size-12 place-items-center rounded-full bg-base-200 text-base-content/50">{{ icon(icon_name, "size-6") }}</div>
+    <div class="mb-3 grid size-12 place-items-center rounded-full bg-primary/12 text-primary">{{ icon(icon_name, "size-6") }}</div>
     <p class="font-semibold">{{ title }}</p>
     <p class="mt-1 text-sm text-base-content/60">{{ message }}</p>
     {{ caller() if caller }}
 </div>
 {%- endmacro %}
 
-{# Round tinted icon used in lists (activity, settings rows) #}
+{# Rounded tinted icon used in lists, stat cards and settings rows #}
 {# Class names are spelled out in full so Tailwind can find them when scanning templates #}
 {% set tile_tones = {
     "primary": "bg-primary/12 text-primary",
@@ -82,4 +53,55 @@
 } %}
 {% macro icon_tile(icon_name, tone="primary", size="size-10") -%}
 <div class="grid {{ size }} shrink-0 place-items-center rounded-xl {{ tile_tones[tone] }}">{{ icon(icon_name, "size-5") }}</div>
+{%- endmacro %}
+
+{# Coloured edge on each load card, matching its status badge #}
+{% set status_edges = {
+    "Draft": "bg-base-content/30",
+    "Active": "bg-warning",
+    "Delivered": "bg-success",
+    "Invoiced": "bg-info",
+    "Paid": "bg-secondary",
+} %}
+
+{# One load in a list: reference, broker, status, route, miles and pay. details adds dates and RPM. #}
+{% macro load_card(load, terms, details=False) -%}
+{% set overdue = days_overdue(load, terms) %}
+<a href="/loads/{{ load.id }}" class="card-soft group relative block overflow-hidden py-3.5 pl-4 pr-2.5 transition hover:border-primary/50">
+    <span class="absolute inset-y-0 left-0 w-1 {{ status_edges[load.status] }}" aria-hidden="true"></span>
+    <div class="flex items-center gap-2.5">
+        {{ icon_tile("truck", "primary", "size-9") }}
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+                <span class="truncate font-bold tracking-tight">{{ load.load_reference }}</span>
+                {% if overdue %}
+                <span class="badge badge-soft badge-error badge-sm rounded-lg border-current/45 font-semibold whitespace-nowrap">{{ overdue }}d overdue</span>
+                {% else %}
+                {{ status_badge(load.status) }}
+                {% endif %}
+            </div>
+            <div class="truncate text-sm text-base-content/60">{{ load.broker_name }}</div>
+        </div>
+        <div class="flex shrink-0 flex-col items-end border-l border-base-300 pl-3">
+            <span class="text-sm text-base-content/70">{{ load.loaded_miles | miles }}</span>
+            <span class="text-base font-bold text-primary">{{ load.total_amount | money }}</span>
+        </div>
+        {{ icon("chevron-right", "size-5 shrink-0 text-base-content/35 transition group-hover:translate-x-0.5 group-hover:text-primary") }}
+    </div>
+    <div class="mt-2.5 flex items-center gap-1.5 pr-2 text-sm text-base-content/80">
+        {{ icon("map-pin", "size-4 shrink-0 text-base-content/45") }}
+        <span class="truncate">{{ load.pickup_location }}</span>
+        {{ icon("arrow-right", "size-4 shrink-0 text-base-content/45") }}
+        <span class="truncate">{{ load.delivery_location }}</span>
+        {% if load.stops %}<span class="shrink-0 text-xs text-base-content/50">+{{ load.stops | length }} stop{{ "s" if load.stops | length > 1 }}</span>{% endif %}
+    </div>
+    {% if details %}
+    <div class="mt-1.5 flex items-center gap-1.5 text-xs text-base-content/55">
+        {{ icon("calendar", "size-4 shrink-0") }}
+        <span class="truncate">{{ load.pickup_date | short_date(False) }} – {{ (load.actual_delivery_date or load.delivery_date) | short_date(False) }}</span>
+        <span aria-hidden="true">·</span>
+        <span class="shrink-0">{{ rpm(load.rate_amount, load.loaded_miles) }}</span>
+    </div>
+    {% endif %}
+</a>
 {%- endmacro %}

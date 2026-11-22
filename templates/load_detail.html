@@ -1,65 +1,294 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import status_badge, route, stat, back_header, icon_tile %}
+{% from "macros/ui.html" import status_badge, page_hero, icon_tile %}
 
-{% block title %}#{{ load.load_reference }} · LoadPilot{% endblock %}
+{% block title %}{{ load.load_reference }} · LoadPilot{% endblock %}
+
+{% set picked_up = load.status != "Draft" and (load.status != "Active" or load.pickup_date <= today) %}
+{% set overdue = days_overdue(load, terms, today) %}
+{% set due = due_date(load, terms) %}
+{% set paid = load.status == "Paid" %}
+
+{% macro metric(icon_name, value, label) -%}
+<div class="flex min-w-0 items-center justify-center gap-2 px-2">
+    {{ icon(icon_name, "size-6 shrink-0 text-base-content/55") }}
+    <div class="min-w-0">
+        <div class="truncate text-[15px] font-bold">{{ value }}</div>
+        <div class="truncate text-xs text-base-content/60">{{ label }}</div>
+    </div>
+</div>
+{%- endmacro %}
+
+{# A file on the load: opens in a new tab, or downloads with a readable name #}
+{% macro document_row(path, name, note) -%}
+<div class="flex items-center gap-3 rounded-2xl border border-base-300 bg-base-200/40 p-3">
+    {{ icon("file", "size-7 shrink-0 text-primary") }}
+    <a href="/{{ path }}" target="_blank" class="min-w-0 flex-1">
+        <div class="truncate font-semibold">{{ name }}</div>
+        <div class="truncate text-sm text-base-content/60">{{ note }}</div>
+    </a>
+    <a href="/{{ path }}" download="{{ name }}" class="btn btn-square rounded-xl border-base-300 bg-base-100" aria-label="Download {{ name }}" title="Download">{{ icon("download", "size-5") }}</a>
+    <a href="/{{ path }}" target="_blank" class="btn btn-square rounded-xl border-base-300 bg-base-100" aria-label="Open {{ name }}" title="Open">{{ icon("external-link", "size-5") }}</a>
+</div>
+{%- endmacro %}
 
 {% block content %}
-{% call back_header("#" ~ load.load_reference, "/loads", load.broker_name) %}
+{# Where the load stands, in a line under the title #}
+{% if load.status == "Active" %}
+    {% set summary = ("In transit to " ~ load.delivery_location) if picked_up else ("Picks up " ~ load.pickup_date | short_date(False) ~ " in " ~ load.pickup_location) %}
+{% elif load.status == "Delivered" %}
+    {% set summary = "Delivered " ~ (load.actual_delivery_date | short_date(False)) ~ " · ready to invoice" %}
+{% elif load.status == "Invoiced" %}
+    {% set summary = load.invoice_number ~ (" · %d days overdue" % overdue if overdue else (" · due " ~ due | short_date(False) if due else "")) %}
+{% elif paid %}
+    {% set summary = "Paid " ~ load.paid_at | short_date %}
+{% else %}
+    {% set summary = "Draft" %}
+{% endif %}
+
+{% call page_hero("Load Details", summary, "/loads") %}
     {{ status_badge(load.status, "badge-md") }}
-    <a href="/loads/{{ load.id }}/edit" class="btn btn-circle btn-ghost btn-sm" aria-label="Edit load" title="Edit load">{{ icon("pencil", "size-5") }}</a>
+    <a href="/loads/{{ load.id }}/edit" class="btn btn-circle btn-ghost btn-sm text-white hover:bg-white/10" aria-label="Edit load" title="Edit load">{{ icon("pencil", "size-5") }}</a>
 {% endcall %}
 
-<div class="space-y-4">
-    <!-- Route & pay -->
-    <section class="card-soft p-5">
-        {{ route(load, labels=True) }}
-        {% if load.stops %}
-        <ol class="mt-4 space-y-2.5 rounded-xl bg-base-200/60 p-3 text-sm">
-            {% for kind, location, day in load.route_stops %}
-            <li class="flex items-center gap-3">
-                <span class="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold {{ 'bg-primary/12 text-primary' if kind == 'pickup' else 'bg-success/12 text-success' }}">{{ loop.index }}</span>
-                <span class="min-w-0 flex-1 truncate"><span class="text-base-content/60">{{ "Pickup" if kind == "pickup" else "Drop" }}</span> <span class="font-semibold">{{ location }}</span></span>
-                <span class="shrink-0 text-xs text-base-content/60">{{ day | short_date(False) if day else "" }}</span>
+<div class="mt-5 space-y-4">
+    <!-- Load, broker and pay -->
+    <section class="card-soft overflow-hidden">
+        <div class="flex items-center gap-3 p-4 sm:p-5">
+            <div class="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/12 text-primary">{{ icon("package", "size-6") }}</div>
+            <div class="min-w-0 flex-1">
+                <div class="truncate text-lg font-bold tracking-tight">Load # {{ load.load_reference }}</div>
+                <div class="truncate text-sm text-base-content/60">Broker: {{ load.broker_name }}</div>
+            </div>
+            <div class="shrink-0 text-right">
+                <div class="text-xl font-extrabold tracking-tight text-primary sm:text-2xl">{{ load.total_amount | money }}</div>
+                <div class="text-sm text-base-content/60">{{ "Rate + extras" if load.charges else "Rate" }}</div>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 divide-x divide-base-300 border-t border-base-300 py-3.5">
+            {{ metric("road", load.loaded_miles | miles, "Mileage") }}
+            {{ metric("circle-dollar-sign", rpm(load.rate_amount, load.loaded_miles), "RPM") }}
+            {{ metric("calendar", "Net %d" % terms, "Terms") }}
+        </div>
+        {% if load.empty_miles %}
+        <p class="border-t border-base-300 px-5 py-2.5 text-xs text-base-content/60">
+            +{{ load.empty_miles | miles }} empty{% if load.deadhead_origin %} from {{ load.deadhead_origin }}{% endif %}
+            · <span class="font-semibold text-base-content/80">{{ rpm(load.rate_amount, load.total_miles) }}</span> all-in
+        </p>
+        {% endif %}
+    </section>
+
+    <!-- Timeline: where the load is between pickup and getting paid -->
+    {% if load.status == "Active" or load.status == "Draft" %}{% set current = 1 if picked_up else 0 %}
+    {% elif load.status == "Delivered" %}{% set current = 3 %}
+    {% elif load.status == "Invoiced" %}{% set current = 4 %}
+    {% else %}{% set current = 5 %}{% endif %}
+    {% set steps = [
+        ("Pickup", "package", load.pickup_date | short_date(False)),
+        ("In Transit", "truck", ""),
+        ("Delivered", "package-check", load.actual_delivery_date | short_date(False) if load.actual_delivery_date else "Due " ~ load.delivery_date | short_date(False)),
+        ("Invoiced", "receipt", load.invoiced_at | short_date(False) if load.invoiced_at else ""),
+        ("Paid", "dollar-sign", load.paid_at | short_date(False) if load.paid_at else ("Due " ~ due | short_date(False) if due else "")),
+    ] %}
+    <section class="card-soft p-4 sm:p-5">
+        <h2 class="section-title">Load Timeline</h2>
+        <ol class="mt-5 grid grid-cols-5" aria-label="Load progress">
+            {% for label, icon_name, when in steps %}
+            {% set state = "done" if loop.index0 < current else ("current" if loop.index0 == current else "todo") %}
+            <li class="relative flex flex-col items-center text-center" {% if state == "current" %}aria-current="step"{% endif %}>
+                {% if not loop.last %}
+                <span class="absolute left-1/2 top-[1.0625rem] h-0.5 w-full {{ 'bg-primary' if state == 'done' else 'bg-base-300' }}" aria-hidden="true"></span>
+                {% endif %}
+                {% if state == "done" %}
+                <span class="relative grid size-9 place-items-center rounded-full bg-primary text-primary-content">{{ icon("check", "size-5") }}</span>
+                {% elif state == "current" %}
+                <span class="relative grid size-9 place-items-center rounded-full border-2 border-primary bg-base-100 text-primary shadow-[0_0_18px_-2px_var(--color-primary)]">{{ icon(icon_name, "size-[1.125rem]") }}</span>
+                {% else %}
+                <span class="relative grid size-9 place-items-center rounded-full border-2 border-base-300 bg-base-100 text-base-content/35">{{ icon("check", "size-4") }}</span>
+                {% endif %}
+                <span class="mt-2 text-xs font-semibold leading-tight {{ 'text-primary' if state == 'current' else ('text-base-content/50' if state == 'todo') }}">{{ label }}</span>
+                {% if when %}<span class="mt-0.5 text-[11px] leading-tight text-base-content/55">{{ when }}</span>{% endif %}
             </li>
             {% endfor %}
         </ol>
-        {% endif %}
-        <div class="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-base-200/60 p-3 text-sm">
-            <div class="flex items-center gap-2">
-                {{ icon("calendar", "size-4 text-base-content/50") }}
-                <div><div class="text-xs text-base-content/60">Pickup</div><div class="font-semibold">{{ load.pickup_date | short_date }}</div></div>
-            </div>
-            <div class="flex items-center gap-2">
-                {{ icon("calendar", "size-4 text-base-content/50") }}
-                <div>
-                    {% if load.actual_delivery_date %}
-                    <div class="text-xs text-base-content/60">Delivered</div><div class="font-semibold text-success">{{ load.actual_delivery_date | short_date }}</div>
-                    {% else %}
-                    <div class="text-xs text-base-content/60">Delivery</div><div class="font-semibold">{{ load.delivery_date | short_date }}</div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div class="mt-4 grid grid-cols-3 gap-3 border-t border-base-300/70 pt-4">
-            {{ stat("Rate", load.rate_amount | money, "text-success") }}
-            {{ stat("Loaded Miles", load.loaded_miles | miles) }}
-            {{ stat("RPM", rpm(load.rate_amount, load.loaded_miles)) }}
-            {{ stat("Empty Miles", load.empty_miles | miles) }}
-            {{ stat("All-in RPM", rpm(load.rate_amount, load.total_miles)) }}
-            {{ stat("Deadhead From", load.deadhead_origin or "—") }}
+
+        <div class="relative mt-5 overflow-hidden rounded-2xl border border-base-300 bg-base-200/50 p-4">
+            <svg class="pointer-events-none absolute inset-y-0 right-0 h-full w-3/5 text-primary [mask-image:linear-gradient(to_right,transparent,black_45%)]" viewBox="0 0 200 140" preserveAspectRatio="xMaxYMid slice" fill="none" aria-hidden="true">
+                <g class="stroke-base-content/10" stroke-width="1">
+                    <path d="M0 30 C50 26 90 40 140 30 S200 22 220 26"/>
+                    <path d="M0 96 C40 90 80 104 130 94 S190 84 220 90"/>
+                    <path d="M40 0 C46 40 30 80 44 140"/>
+                    <path d="M120 0 C112 50 130 90 118 140"/>
+                    <path d="M170 0 C176 30 160 70 178 140"/>
+                    <path d="M0 62 L220 70"/>
+                </g>
+                <path d="M62 108 C92 112 98 82 122 72 S160 62 176 34" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                <path d="M62 108 C92 112 98 82 122 72 S160 62 176 34" stroke="currentColor" stroke-width="9" stroke-linecap="round" opacity="0.15"/>
+                <circle cx="62" cy="108" r="6" fill="currentColor"/><circle cx="62" cy="108" r="2.4" class="fill-base-200"/>
+                <circle cx="176" cy="34" r="6" fill="currentColor"/><circle cx="176" cy="34" r="2.4" class="fill-base-200"/>
+            </svg>
+            <ol class="relative max-w-[70%] space-y-4">
+                {% for kind, location, day in load.route_stops %}
+                <li class="relative flex gap-3">
+                    {% if not loop.last %}<span class="absolute bottom-[-0.875rem] left-[0.6875rem] top-7 border-l-2 border-dotted border-base-content/30" aria-hidden="true"></span>{% endif %}
+                    {{ icon("map-pin", "size-6 shrink-0 fill-primary stroke-base-200") }}
+                    <div class="min-w-0">
+                        <div class="font-semibold">
+                            {% if loop.first %}Pickup{% elif loop.last %}{{ "Delivered" if load.actual_delivery_date else "Delivery" }}{% else %}{{ "Pickup" if kind == "pickup" else "Drop" }} <span class="text-xs font-normal text-base-content/50">stop {{ loop.index0 }}</span>{% endif %}
+                        </div>
+                        <div class="truncate text-sm text-base-content/80">{{ location }}</div>
+                        {% if day %}<div class="mt-0.5 flex items-center gap-1.5 text-sm text-base-content/60">{{ icon("calendar", "size-4") }} {{ day | short_date }}</div>{% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ol>
         </div>
     </section>
 
+    <!-- Rate con details and the next step for this load -->
+    <section class="card-soft p-4 sm:p-5">
+        <div class="flex items-center gap-3">
+            {{ icon_tile("file-text", "primary") }}
+            <h2 class="section-title min-w-0 flex-1 truncate">Rate Confirmation</h2>
+            {% if load.rate_con_pdf_path %}
+            <span class="badge badge-soft badge-success badge-md gap-1 rounded-lg border-current/45 font-semibold">{{ icon("check", "size-3.5") }} On file</span>
+            {% endif %}
+        </div>
+        <div class="mt-4 flex gap-4">
+            <dl class="min-w-0 flex-1 divide-y divide-base-300 text-sm">
+                {% for label, value in [("Load Number", load.load_reference), ("Broker", load.broker_name), ("Mileage", load.loaded_miles | miles), ("Rate", load.rate_amount | money)] %}
+                <div class="grid grid-cols-[6.5rem_1fr] gap-2 py-2 first:pt-0">
+                    <dt class="text-base-content/60">{{ label }}</dt>
+                    <dd class="truncate font-semibold">{{ value }}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+            {% if load.rate_con_pdf_path %}
+            {% set ext = load.rate_con_pdf_path.rsplit(".", 1)[-1] | lower %}
+            <a href="/{{ load.rate_con_pdf_path }}" target="_blank" class="relative block h-28 w-22 shrink-0 overflow-hidden rounded-xl border border-base-300 bg-white shadow-md" aria-label="Open the rate con">
+                {% if ext in ("png", "jpg", "jpeg", "webp", "gif") %}
+                <img src="/{{ load.rate_con_pdf_path }}" alt="" class="size-full object-cover object-top">
+                {% else %}
+                <div class="space-y-1.5 p-2.5" aria-hidden="true">
+                    <div class="h-1.5 w-3/4 rounded bg-slate-400"></div>
+                    <div class="h-1 w-1/2 rounded bg-slate-300"></div>
+                    <div class="mt-2.5 h-6 rounded bg-slate-200"></div>
+                    <div class="h-1 rounded bg-slate-300"></div>
+                    <div class="h-1 w-5/6 rounded bg-slate-300"></div>
+                    <div class="h-1 w-2/3 rounded bg-slate-300"></div>
+                </div>
+                {% endif %}
+                <span class="absolute bottom-1.5 right-1.5 grid size-7 place-items-center rounded-lg bg-[#0b111c]/85 text-white">{{ icon("zoom-in", "size-4") }}</span>
+            </a>
+            {% endif %}
+        </div>
+        {% if load.broker_email %}
+        <a href="mailto:{{ load.broker_email }}" class="mt-3 flex items-center gap-2 text-sm font-medium text-primary">{{ icon("mail", "size-4 shrink-0") }} <span class="truncate">{{ load.broker_email }}</span></a>
+        {% endif %}
+
+        {% if load.status == "Active" %}
+        <div class="mt-5 border-t border-base-300 pt-5">
+            <button class="btn btn-primary btn-lg w-full rounded-2xl" hx-post="/update-load-status/{{ load.id }}/Delivered" hx-confirm="Mark this load as delivered today?">
+                {{ icon("check", "size-5") }} Mark Delivered
+            </button>
+            <p class="mt-2 text-center text-xs text-base-content/55">Then attach the signed BOL to build the invoice.</p>
+        </div>
+
+        {% elif load.status == "Delivered" %}
+        <form id="invoice" method="post" action="/generate-invoice/{{ load.id }}" enctype="multipart/form-data" class="mt-5 scroll-mt-6 border-t border-base-300 pt-5" data-loading-form>
+            <p class="mb-3 text-sm text-base-content/70">Attach the signed BOL and LoadPilot builds the PDF invoice.</p>
+            <label class="btn btn-outline btn-lg w-full rounded-2xl border-base-300 font-semibold" data-file-drop>
+                {{ icon("paperclip", "size-5 shrink-0 text-primary") }}
+                <span class="truncate" data-file-label>Attach BOL</span>
+                <input type="file" name="bol_file" accept="image/*,application/pdf" class="sr-only" required>
+            </label>
+            <button type="submit" class="btn btn-primary btn-lg mt-3 w-full rounded-2xl">
+                <span class="loading loading-spinner hidden" data-loading></span>
+                {{ icon("receipt", "size-5") }} Generate Invoice
+            </button>
+        </form>
+
+        {% elif load.status == "Invoiced" %}
+        <div id="payment" class="mt-5 scroll-mt-6 border-t border-base-300 pt-5">
+            <div class="flex items-center gap-3">
+                {{ icon_tile("file-check", "info") }}
+                <div class="min-w-0 flex-1">
+                    <h3 class="font-bold">Invoice {{ load.invoice_number }}</h3>
+                    <p class="text-sm text-base-content/60">
+                        {% if load.invoiced_at %}Sent {{ load.invoiced_at | short_date }}{% else %}Invoice generated{% endif %}
+                        · {{ load.total_amount | money }}
+                    </p>
+                </div>
+            </div>
+            {% if overdue %}
+            <div role="alert" class="alert alert-soft alert-error mt-4 text-sm">
+                {{ icon("circle-alert", "size-5") }}
+                <span>Payment is <strong>{{ overdue }} day{{ "s" if overdue > 1 }} overdue</strong>. It was due {{ due | short_date }}.</span>
+            </div>
+            {% elif due %}
+            <p class="mt-4 flex items-center gap-2 text-sm text-base-content/70">{{ icon("clock", "size-4") }} Payment due {{ due | short_date }} (net {{ terms }})</p>
+            {% endif %}
+            {% if load.invoice_pdf_path %}
+            {% if request.query_params.get("rebuilt") %}
+            <p class="mt-4 flex items-center gap-2 text-sm text-success">{{ icon("circle-check", "size-4") }} Invoice rebuilt with the latest details.</p>
+            {% endif %}
+            <div class="mt-4 grid grid-cols-2 gap-3">
+                <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-outline rounded-xl border-primary/60 hover:border-primary">
+                    {{ icon("external-link", "size-5 text-primary") }} Open PDF
+                </a>
+                <form method="post" action="/loads/{{ load.id }}/rebuild-invoice">
+                    <button type="submit" class="btn btn-outline w-full rounded-xl border-base-300" title="Rebuild the PDF after editing the load or its charges">{{ icon("receipt", "size-5 text-primary") }} Rebuild</button>
+                </form>
+            </div>
+            {% endif %}
+
+            <form method="post" action="/loads/{{ load.id }}/paid" class="mt-5 border-t border-base-300 pt-4">
+                <h3 class="mb-3 font-semibold">Got paid?</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="floating-label">
+                        <span>Paid on</span>
+                        <input type="date" name="paid_at" class="input w-full" value="{{ today }}" max="{{ today }}" required>
+                    </label>
+                    <label class="input w-full">
+                        {{ icon("dollar-sign", "size-4 text-base-content/50") }}
+                        <input type="number" step="0.01" min="0.01" name="amount_paid" value="{{ '%.2f' | format(load.total_amount) }}" aria-label="Amount received" required>
+                    </label>
+                </div>
+                <p class="mt-2 text-xs text-base-content/60">Lower the amount if the broker took a quick-pay fee or short-paid.</p>
+                <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-2xl">{{ icon("check", "size-5") }} Mark Paid</button>
+            </form>
+        </div>
+
+        {% elif paid %}
+        {% set short = load.total_amount - (load.amount_paid or load.total_amount) %}
+        <div class="mt-5 border-t border-base-300 pt-5">
+            <div class="flex items-center gap-3">
+                {{ icon_tile("circle-check", "success") }}
+                <div class="min-w-0 flex-1">
+                    <h3 class="font-bold">Paid {{ load.amount_paid | money }}</h3>
+                    <p class="text-sm text-base-content/60">
+                        Received {{ load.paid_at | short_date }}{% if load.invoice_number %} · Invoice {{ load.invoice_number }}{% endif %}
+                    </p>
+                </div>
+            </div>
+            {% if short > 0.005 %}
+            <p class="mt-3 text-sm text-warning">{{ short | money }} less than the {{ load.total_amount | money }} billed.</p>
+            {% endif %}
+            <form method="post" action="/loads/{{ load.id }}/unpaid" class="mt-3">
+                <button type="submit" class="btn btn-ghost btn-sm w-full" onclick="return confirm('Move this load back to awaiting payment?')">Undo paid</button>
+            </form>
+        </div>
+        {% endif %}
+    </section>
+
     <!-- Extra charges billed on top of the rate -->
-    {% set paid = load.status == "Paid" %}
     {% if load.charges or not paid %}
-    <section id="charges" class="card-soft scroll-mt-6 p-5">
+    <section id="charges" class="card-soft scroll-mt-6 p-4 sm:p-5">
         <div class="mb-3 flex items-center justify-between gap-3">
-            <h2 class="font-bold">Extra Charges</h2>
-            {% if load.charges %}<span class="text-sm text-base-content/60">Total billed <strong class="text-success">{{ load.total_amount | money }}</strong></span>{% endif %}
+            <h2 class="section-title">Extra Charges</h2>
+            {% if load.charges %}<span class="text-sm text-base-content/60">Total billed <strong class="text-primary">{{ load.total_amount | money }}</strong></span>{% endif %}
         </div>
         {% if load.charges %}
-        <ul class="mb-3 divide-y divide-base-300/70 rounded-xl bg-base-200/60">
+        <ul class="mb-3 divide-y divide-base-300 rounded-xl border border-base-300 bg-base-200/40">
             {% for charge in load.charges %}
             <li class="flex items-center gap-3 px-3 py-2 text-sm">
                 <span class="min-w-0 flex-1 truncate font-medium">{{ charge.description }}</span>
@@ -97,148 +326,9 @@
     </section>
     {% endif %}
 
-    <!-- Next step for this load -->
-    {% if load.status == "Active" %}
-    <section class="card-soft p-5">
-        <div class="flex items-center gap-3">
-            {{ icon_tile("package-check", "success") }}
-            <div class="min-w-0 flex-1">
-                <h2 class="font-bold">Dropped this load?</h2>
-                <p class="text-sm text-base-content/60">Mark it delivered to unlock invoicing.</p>
-            </div>
-        </div>
-        <button class="btn btn-success btn-lg mt-4 w-full rounded-xl" hx-post="/update-load-status/{{ load.id }}/Delivered" hx-confirm="Mark this load as delivered today?">
-            {{ icon("check", "size-5") }} Mark Delivered
-        </button>
-    </section>
-
-    {% elif load.status == "Delivered" %}
-    <section id="invoice" class="card-soft scroll-mt-6 p-5">
-        <div class="mb-4 flex items-center gap-3">
-            {{ icon_tile("receipt", "warning") }}
-            <div>
-                <h2 class="font-bold">Generate Invoice</h2>
-                <p class="text-sm text-base-content/60">Upload the signed BOL and LoadPilot builds the PDF invoice.</p>
-            </div>
-        </div>
-        <form method="post" action="/generate-invoice/{{ load.id }}" enctype="multipart/form-data" data-loading-form>
-            <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-base-300 bg-base-200/50 px-4 py-8 text-center transition hover:border-primary hover:bg-primary/5" data-file-drop>
-                <span class="grid size-12 place-items-center rounded-full bg-primary/12 text-primary">{{ icon("camera", "size-6") }}</span>
-                <span class="font-semibold" data-file-label>Take a photo or choose the BOL</span>
-                <span class="text-xs text-base-content/60">Photo or PDF</span>
-                <input type="file" name="bol_file" accept="image/*,application/pdf" class="sr-only" required>
-            </label>
-            <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl">
-                <span class="loading loading-spinner hidden" data-loading></span>
-                {{ icon("receipt", "size-5") }} Generate Invoice
-            </button>
-        </form>
-    </section>
-
-    {% elif load.status == "Invoiced" %}
-    {% set overdue = days_overdue(load, terms, today) %}
-    {% set due = due_date(load, terms) %}
-    <section id="payment" class="card-soft scroll-mt-6 p-5">
-        <div class="flex items-center gap-3">
-            {{ icon_tile("file-check", "info") }}
-            <div class="min-w-0 flex-1">
-                <h2 class="font-bold">Invoice {{ load.invoice_number }}</h2>
-                <p class="text-sm text-base-content/60">
-                    {% if load.invoiced_at %}Sent {{ load.invoiced_at | short_date }}{% else %}Invoice generated{% endif %}
-                    · {{ load.total_amount | money }}
-                </p>
-            </div>
-        </div>
-        {% if overdue %}
-        <div role="alert" class="alert alert-soft alert-error mt-4 text-sm">
-            {{ icon("circle-alert", "size-5") }}
-            <span>Payment is <strong>{{ overdue }} day{{ "s" if overdue > 1 }} overdue</strong>. It was due {{ due | short_date }}.</span>
-        </div>
-        {% elif due %}
-        <p class="mt-4 flex items-center gap-2 text-sm text-base-content/70">{{ icon("clock", "size-4") }} Payment due {{ due | short_date }} (net {{ terms }})</p>
-        {% endif %}
-        {% if load.invoice_pdf_path %}
-        {% if request.query_params.get("rebuilt") %}
-        <p class="mt-4 flex items-center gap-2 text-sm text-success">{{ icon("circle-check", "size-4") }} Invoice rebuilt with the latest details.</p>
-        {% endif %}
-        <div class="mt-4 grid grid-cols-[1fr_auto] gap-2">
-            <a href="/{{ load.invoice_pdf_path }}" target="_blank" class="btn btn-soft btn-primary rounded-xl">
-                {{ icon("external-link", "size-5") }} Open Invoice PDF
-            </a>
-            <form method="post" action="/loads/{{ load.id }}/rebuild-invoice">
-                <button type="submit" class="btn btn-ghost rounded-xl" title="Rebuild the PDF after editing the load or its charges">{{ icon("receipt", "size-5") }} Rebuild</button>
-            </form>
-        </div>
-        {% endif %}
-
-        <form method="post" action="/loads/{{ load.id }}/paid" class="mt-4 border-t border-base-300/70 pt-4">
-            <h3 class="mb-3 font-semibold">Got paid?</h3>
-            <div class="grid grid-cols-2 gap-3">
-                <label class="floating-label">
-                    <span>Paid on</span>
-                    <input type="date" name="paid_at" class="input w-full" value="{{ today }}" max="{{ today }}" required>
-                </label>
-                <label class="input w-full">
-                    {{ icon("dollar-sign", "size-4 text-base-content/50") }}
-                    <input type="number" step="0.01" min="0.01" name="amount_paid" value="{{ '%.2f' | format(load.total_amount) }}" aria-label="Amount received" required>
-                </label>
-            </div>
-            <p class="mt-2 text-xs text-base-content/60">Lower the amount if the broker took a quick-pay fee or short-paid.</p>
-            <button type="submit" class="btn btn-success btn-lg mt-4 w-full rounded-xl">{{ icon("check", "size-5") }} Mark Paid</button>
-        </form>
-    </section>
-
-    {% elif load.status == "Paid" %}
-    {% set short = load.total_amount - (load.amount_paid or load.total_amount) %}
-    <section class="card-soft p-5">
-        <div class="flex items-center gap-3">
-            {{ icon_tile("circle-check", "success") }}
-            <div class="min-w-0 flex-1">
-                <h2 class="font-bold">Paid {{ load.amount_paid | money }}</h2>
-                <p class="text-sm text-base-content/60">
-                    Received {{ load.paid_at | short_date }}{% if load.invoice_number %} · Invoice {{ load.invoice_number }}{% endif %}
-                </p>
-            </div>
-        </div>
-        {% if short > 0.005 %}
-        <p class="mt-3 text-sm text-warning">{{ short | money }} less than the {{ load.total_amount | money }} billed.</p>
-        {% endif %}
-        <form method="post" action="/loads/{{ load.id }}/unpaid" class="mt-3">
-            <button type="submit" class="btn btn-ghost btn-sm w-full" onclick="return confirm('Move this load back to awaiting payment?')">Undo paid</button>
-        </form>
-    </section>
-    {% endif %}
-
-    <!-- Broker -->
-    <section class="card-soft divide-y divide-base-300/70">
-        <div class="flex items-center gap-3 p-4">
-            {{ icon_tile("building-2", "secondary") }}
-            <div class="min-w-0 flex-1">
-                <div class="text-xs text-base-content/60">Broker</div>
-                <div class="truncate font-semibold">{{ load.broker_name }}</div>
-            </div>
-        </div>
-        <div class="flex items-center gap-3 p-4">
-            {{ icon_tile("hash", "neutral") }}
-            <div class="min-w-0 flex-1">
-                <div class="text-xs text-base-content/60">Load Reference</div>
-                <div class="truncate font-semibold">{{ load.load_reference }}</div>
-            </div>
-        </div>
-        {% if load.broker_email %}
-        <a href="mailto:{{ load.broker_email }}" class="flex items-center gap-3 p-4 transition hover:bg-base-200/40">
-            {{ icon_tile("mail", "neutral") }}
-            <div class="min-w-0 flex-1">
-                <div class="text-xs text-base-content/60">Email</div>
-                <div class="truncate font-semibold text-primary">{{ load.broker_email }}</div>
-            </div>
-        </a>
-        {% endif %}
-    </section>
-
     <!-- Notes (pickup numbers, instructions) -->
-    <section class="card-soft p-5">
-        <h2 class="mb-2 flex items-center gap-2 font-bold">{{ icon("sticky-note", "size-5 text-warning") }} Notes</h2>
+    <section class="card-soft p-4 sm:p-5">
+        <h2 class="section-title mb-2 flex items-center gap-2">{{ icon("sticky-note", "size-5 text-primary") }} Notes</h2>
         {% if load.notes %}
         <p class="whitespace-pre-line text-sm leading-relaxed text-base-content/80">{{ load.notes }}</p>
         {% else %}
@@ -247,25 +337,29 @@
     </section>
 
     <!-- Documents -->
-    <section class="card-soft divide-y divide-base-300/70">
-        <h2 class="px-5 pb-2 pt-4 font-bold">Documents</h2>
-        {% for label, path, icon_name in [("Rate Con", load.rate_con_pdf_path, "file-check"), ("Signed BOL", load.bol_pdf_path, "file"), ("Invoice PDF", load.invoice_pdf_path, "file-text")] if path %}
-        <a href="/{{ path }}" target="_blank" class="flex items-center gap-3 px-5 py-3 transition hover:bg-base-200/40">
-            {{ icon_tile(icon_name, "neutral", "size-9") }}
-            <span class="flex-1 font-medium">{{ label }}</span>
-            {{ icon("external-link", "size-4 text-base-content/40") }}
-        </a>
-        {% endfor %}
-        {% if not load.rate_con_pdf_path %}
-        <form method="post" action="/loads/{{ load.id }}/rate-con" enctype="multipart/form-data" class="flex items-center gap-3 px-5 py-3" data-auto-submit>
-            {{ icon_tile("file-check", "neutral", "size-9") }}
-            <span class="flex-1 font-medium text-base-content/60">No rate con on file</span>
-            <label class="btn btn-sm rounded-lg">
-                {{ icon("cloud-upload", "size-4") }} Attach
-                <input type="file" name="rate_con" accept="application/pdf,image/*" class="sr-only" required>
-            </label>
-        </form>
-        {% endif %}
+    <section class="card-soft p-4 sm:p-5">
+        <h2 class="section-title flex items-center gap-2.5">{{ icon("files", "size-6 text-base-content/70") }} Documents</h2>
+        <div class="mt-4 space-y-3">
+            {% set sent = (" · " ~ load.invoiced_at | short_date) if load.invoiced_at else "" %}
+            {% if load.rate_con_pdf_path %}
+            {{ document_row(load.rate_con_pdf_path, "RateCon-%s.%s" % (load.load_reference, load.rate_con_pdf_path.rsplit(".", 1)[-1]), "Rate confirmation") }}
+            {% else %}
+            <form method="post" action="/loads/{{ load.id }}/rate-con" enctype="multipart/form-data" class="flex items-center gap-3 rounded-2xl border border-dashed border-base-300 p-3" data-auto-submit>
+                {{ icon("file", "size-7 shrink-0 text-base-content/40") }}
+                <span class="flex-1 font-medium text-base-content/60">No rate con on file</span>
+                <label class="btn btn-sm rounded-lg border-base-300">
+                    {{ icon("cloud-upload", "size-4") }} Attach
+                    <input type="file" name="rate_con" accept="application/pdf,image/*" class="sr-only" required>
+                </label>
+            </form>
+            {% endif %}
+            {% if load.bol_pdf_path %}
+            {{ document_row(load.bol_pdf_path, "BOL-%s.%s" % (load.load_reference, load.bol_pdf_path.rsplit(".", 1)[-1]), "Signed BOL" ~ sent) }}
+            {% endif %}
+            {% if load.invoice_pdf_path %}
+            {{ document_row(load.invoice_pdf_path, "Invoice-%s.pdf" % load.invoice_number, "Invoice" ~ sent) }}
+            {% endif %}
+        </div>
     </section>
 
     <button class="btn btn-ghost btn-sm w-full text-error" hx-post="/delete-load-web/{{ load.id }}"
@@ -277,7 +371,7 @@
 
 {% block scripts %}
 <script>
-    // Show the chosen file's name in the drop zone, and a spinner while the invoice is built
+    // Show the chosen BOL's name on its button, and a spinner while the invoice is built
     document.querySelectorAll("[data-file-drop]").forEach(function (zone) {
         var input = zone.querySelector("input[type=file]");
         input.addEventListener("change", function () {

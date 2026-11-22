@@ -26,7 +26,7 @@
 <form id="new-load-form" data-last-delivery="{{ last_delivery or '' }}" {% if not editing %}data-auto-locate{% endif %}
       hx-post="{{ action | default('/create-load-web/') }}" hx-swap="none" hx-disabled-elt="find button[type=submit]" class="card-soft scroll-mt-6 p-5">
     <div class="mb-5 flex items-center gap-3">
-        <span class="grid size-10 place-items-center rounded-xl bg-success/12 text-success">{{ icon("pencil" if editing else "circle-check", "size-5") }}</span>
+        <span class="grid size-10 place-items-center rounded-xl bg-primary/12 text-primary">{{ icon("pencil" if editing else "circle-check", "size-5") }}</span>
         <div>
             {% if editing %}
             <h2 class="font-bold">Load Details</h2>
@@ -150,7 +150,7 @@
         <textarea name="notes" class="textarea w-full" rows="3" placeholder="Pickup numbers, appointment times, instructions...">{{ data.notes or '' }}</textarea>
     </fieldset>
 
-    <button type="submit" class="btn btn-success btn-lg mt-5 w-full rounded-xl">
+    <button type="submit" class="btn btn-primary btn-lg mt-5 w-full rounded-2xl">
         {{ icon("check", "size-5") }} {{ "Save Changes" if editing else "Save Load" }}
     </button>
 </form>
