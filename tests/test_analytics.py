@@ -9,7 +9,6 @@ from loadpilot.analytics import (
     payment_terms,
     previous_window,
     receivables,
-    recent_activity,
 )
 from loadpilot.models import Charge, LoadStatus
 
@@ -96,18 +95,6 @@ def test_trend_covers_last_six_months_scaled_to_peak():
     assert [m["percent"] for m in trend] == [0, 0, 0, 50, 0, 100]
 
 
-def test_recent_activity_is_newest_first():
-    added = make_load(created_at=datetime(2026, 10, 1, 9))
-    invoiced = make_load(
-        created_at=datetime(2026, 9, 1, 9), actual_delivery_date=date(2026, 9, 5), invoiced_at=datetime(2026, 9, 6, 12)
-    )
-
-    events = recent_activity([added, invoiced])
-
-    assert [e["kind"] for e in events] == ["added", "invoiced", "delivered", "added"]
-    assert len(recent_activity([added, invoiced], limit=2)) == 2
-
-
 def test_all_in_rpm_counts_empty_miles():
     loads = [
         delivered(date(2026, 10, 2), rate=3000, miles=1000, empty=200),
@@ -167,12 +154,6 @@ def test_receivables_totals_and_overdue():
 
     assert owed["total"] == 2500
     assert (owed["overdue_count"], owed["overdue_total"]) == (1, 2000)
-
-
-def test_recent_activity_includes_payments():
-    load = invoiced(date(2026, 9, 6)).model_copy(update={"paid_at": date(2026, 10, 2), "amount_paid": 980.0})
-
-    assert recent_activity([load])[0]["kind"] == "paid"
 
 
 def test_revenue_includes_extra_charges():

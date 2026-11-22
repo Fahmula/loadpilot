@@ -1,14 +1,14 @@
 {% extends "base.html" %}
+{% from "macros/ui.html" import page_header %}
 
 {% block title %}Loads · LoadPilot{% endblock %}
 
 {% block content %}
-<header class="mb-5 flex items-center justify-between gap-3">
-    <h1 class="text-3xl font-bold tracking-tight">Loads</h1>
-    <a href="/loads/new" class="btn btn-primary rounded-xl shadow-md shadow-primary/25">{{ icon("plus", "size-5") }} Add Load</a>
-</header>
+{% call page_header("Loads", "Every rate con, from booked to paid.") %}
+    <a href="/loads/new" class="btn btn-primary btn-sm h-10 rounded-xl px-4">{{ icon("plus", "size-5") }} Add Load</a>
+{% endcall %}
 
-<label class="input input-lg mb-4 w-full rounded-2xl border-base-300/70 bg-base-100 text-base shadow-sm">
+<label class="input input-lg mb-4 mt-4 w-full rounded-2xl border-base-300 bg-base-100 text-base">
     {{ icon("search", "size-5 text-base-content/50") }}
     <input type="search" name="search" value="{{ search }}" placeholder="Search by broker, reference, location..."
            hx-get="/loads" hx-trigger="input changed delay:300ms, search" hx-target="#loads-results"

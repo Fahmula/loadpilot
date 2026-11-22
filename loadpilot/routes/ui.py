@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from weasyprint import HTML
 
 from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config, suggest_model
-from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables, recent_activity
+from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables
 from loadpilot.brokers import apply_known_broker, known_brokers
 from loadpilot.config import BOL_DIR, INVOICE_DIR
 from loadpilot.documents import claim_pending, save_for_load, save_pending
@@ -51,23 +51,19 @@ async def last_delivery(db) -> str:
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     db = request.app.state.db
-    # The current load is the active one picked up soonest; others are booked ahead
-    active_loads = sorted(await db.get_loads(status=LoadStatus.ACTIVE), key=lambda load: load.pickup_date)
-    needs_invoice = await db.get_loads(limit=10, status=LoadStatus.DELIVERED)
-    terms = payment_terms(await db.get_all_settings())
-    awaiting = receivables(await db.get_unpaid_invoices(), terms)
-    activity = recent_activity(await db.get_recent_loads(limit=30))
+    settings = await db.get_all_settings()
+    terms = payment_terms(settings)
 
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
-            "current_load": active_loads[0] if active_loads else None,
-            "more_active": max(len(active_loads) - 1, 0),
-            "needs_invoice": needs_invoice,
-            "awaiting": awaiting,
+            "company_name": settings.get("company_name") or request.state.user.username,
+            "counts": await db.count_loads_by_status(),
+            "month": build_analytics(await db.get_earned_loads(), "month")["current"],
+            "recent_loads": await db.get_recent_loads(limit=5),
+            "awaiting": receivables(await db.get_unpaid_invoices(), terms),
             "terms": terms,
-            "activity": activity,
         },
     )
 

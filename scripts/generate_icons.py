@@ -12,12 +12,14 @@ import sys
 from pathlib import Path
 
 ICONS = [
-    "arrow-right", "bell", "building-2", "calendar", "camera", "chart-line", "check", "chevron-down",
-    "chevron-left", "chevron-right", "circle-alert", "circle-check", "clock", "cloud-upload", "cpu",
-    "dollar-sign", "external-link", "file", "file-check", "file-text", "gauge", "hash", "info", "key-round",
-    "landmark", "list", "loader-circle", "lock", "log-in", "log-out", "mail", "map-pin", "monitor", "moon",
-    "package", "package-check", "pencil", "plus", "receipt", "route", "search", "settings", "sparkles",
-    "sticky-note", "sun", "trash-2", "trending-down", "trending-up", "truck", "user", "user-plus", "x",
+    "arrow-left", "arrow-right", "bell", "building-2", "calendar", "camera", "chart-line", "check",
+    "chevron-down", "chevron-left", "chevron-right", "circle-alert", "circle-check", "circle-dollar-sign",
+    "clock", "cloud-upload", "coins", "cpu", "dollar-sign", "download", "external-link", "file", "file-check",
+    "file-text", "file-up", "files", "gauge", "hash", "info", "key-round", "landmark", "list",
+    "loader-circle", "lock", "log-in", "log-out", "mail", "map-pin", "monitor", "moon", "package",
+    "package-check", "paperclip", "pencil", "plus", "receipt", "road", "route", "search", "settings",
+    "sparkles", "sticky-note", "sun", "trash-2", "trending-down", "trending-up", "truck", "user", "user-plus",
+    "x", "zoom-in",
 ]  # fmt: skip
 
 OUTPUT = Path(__file__).resolve().parents[1] / "loadpilot" / "icons.py"

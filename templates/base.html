@@ -5,15 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{% block title %}LoadPilot{% endblock %}</title>
 
-    <!-- Apply the saved appearance before first paint so the page never flashes the wrong theme -->
+    <!-- Apply the saved appearance before first paint so the page never flashes the wrong theme.
+         Dark is the default; "system" follows the phone's light/dark setting. -->
     <script>
-        (function () {
+        window.applyAppearance = function (choice) {
             var themes = { light: "loadpilot", dark: "loadpilot-dark" };
-            try {
-                var choice = localStorage.getItem("appearance");
-                if (themes[choice]) document.documentElement.setAttribute("data-theme", themes[choice]);
-            } catch (e) {}
-        })();
+            if (choice === "system") choice = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", themes[choice] || themes.dark);
+        };
+        window.savedAppearance = function () {
+            try { return localStorage.getItem("appearance") || "dark"; } catch (e) { return "dark"; }
+        };
+        applyAppearance(savedAppearance());
+        matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () {
+            if (savedAppearance() === "system") applyAppearance("system");
+        });
     </script>
 
     <!-- PWA Settings for Mobile Devices -->
@@ -21,9 +27,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="LoadPilot">
-    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0b1a3a">
+    <meta name="theme-color" content="#0b111c">
 
     <link rel="stylesheet" href="/static/css/app.css?v={{ app_version }}">
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
@@ -31,12 +38,12 @@
 <body class="min-h-dvh bg-base-200 text-base-content antialiased" hx-boost="false">
     {% from "macros/ui.html" import nav_item %}
 
-    <main class="mx-auto w-full max-w-2xl px-4 pb-32 {% block main_top %}pt-[calc(env(safe-area-inset-top)+1.25rem)]{% endblock %}">
+    <main class="mx-auto w-full max-w-2xl px-4 pb-32">
         {% block content %}{% endblock %}
     </main>
 
     {% block nav %}
-    <nav class="dock dock-lg z-40 border-t border-base-300/70 bg-base-100/95 backdrop-blur pb-[env(safe-area-inset-bottom)]" aria-label="Main">
+    <nav class="dock dock-lg z-40 border-t border-base-300 bg-base-100/95 backdrop-blur pb-[env(safe-area-inset-bottom)]" aria-label="Main">
         {{ nav_item("/", "Dashboard", "gauge", request.url.path == "/") }}
         {{ nav_item("/loads", "Loads", "list", request.url.path.startswith("/loads")) }}
         {{ nav_item("/analytics", "Analytics", "chart-line", request.url.path == "/analytics") }}

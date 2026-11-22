@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import back_header %}
+{% from "macros/ui.html" import page_header %}
 
 {% block title %}Add Load · LoadPilot{% endblock %}
 
 {% block content %}
-{{ back_header("Add Load", "/loads", "Scan a rate confirmation or enter it yourself") }}
+{{ page_header("Add Load", "Scan a rate confirmation or enter it yourself.", "/loads") }}
 
-<div id="add-load-start" class="space-y-4">
+<div id="add-load-start" class="mt-5 space-y-4">
     <form class="card-soft p-5" hx-post="/parse-rate-con-html/" hx-encoding="multipart/form-data"
           hx-target="#load-form-slot" hx-indicator="#extracting" hx-disabled-elt="find button">
         <div class="mb-4 flex items-center gap-3">
-            <span class="grid size-10 place-items-center rounded-xl bg-secondary/12 text-secondary">{{ icon("sparkles", "size-5") }}</span>
+            <span class="grid size-10 place-items-center rounded-xl bg-primary/12 text-primary">{{ icon("sparkles", "size-5") }}</span>
             <div>
                 <h2 class="font-bold">Scan Rate Confirmation</h2>
                 <p class="text-sm text-base-content/60">AI reads the broker, route, rate, miles and pickup numbers.</p>
@@ -31,7 +31,7 @@
             <input type="file" name="files" accept="application/pdf,image/*" multiple required class="sr-only">
         </label>
 
-        <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-xl" {% if not ai.api_key %}disabled{% endif %}>
+        <button type="submit" class="btn btn-primary btn-lg mt-4 w-full rounded-2xl" {% if not ai.api_key %}disabled{% endif %}>
             {{ icon("sparkles", "size-5") }} Extract with AI
         </button>
 
@@ -42,7 +42,7 @@
 
     <div class="divider text-sm text-base-content/50">or</div>
 
-    <button class="btn btn-outline w-full rounded-xl border-base-300 bg-base-100" hx-get="/manual-load-form/" hx-target="#load-form-slot">
+    <button class="btn btn-outline btn-lg w-full rounded-2xl border-base-300 bg-base-100" hx-get="/manual-load-form/" hx-target="#load-form-slot">
         {{ icon("pencil", "size-5") }} Enter Manually
     </button>
 </div>

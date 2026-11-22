@@ -1,15 +1,12 @@
 {% extends "base.html" %}
-{% from "macros/ui.html" import icon_tile %}
+{% from "macros/ui.html" import icon_tile, page_header %}
 
 {% block title %}Settings · LoadPilot{% endblock %}
 
 {% block content %}
-<header class="mb-5 flex items-center gap-3">
-    {{ icon("settings", "size-8 text-base-content/80") }}
-    <h1 class="text-3xl font-bold tracking-tight">Settings</h1>
-</header>
+{{ page_header("Settings", "Company, AI scanning and payments.") }}
 
-<div class="space-y-4">
+<div class="mt-5 space-y-4">
     {% for section in ("company", "ai", "bank") %}
         {% set editing = False %}
         {% include "partials/settings_section.html" %}
@@ -18,14 +15,14 @@
     <!-- Appearance (stored per device) -->
     <section class="card-soft p-5">
         <div class="mb-4 flex items-center gap-3">
-            {{ icon_tile("sun", "warning") }}
+            {{ icon_tile("moon", "primary") }}
             <div>
                 <h2 class="font-bold">Appearance</h2>
                 <p class="text-xs text-base-content/60">Saved on this device</p>
             </div>
         </div>
         <div class="grid grid-cols-3 gap-1 rounded-xl bg-base-200 p-1" role="radiogroup" aria-label="Appearance">
-            {% for value, label, icon_name in [("system", "System", "monitor"), ("light", "Light", "sun"), ("dark", "Dark", "moon")] %}
+            {% for value, label, icon_name in [("dark", "Dark", "moon"), ("light", "Light", "sun"), ("system", "System", "monitor")] %}
             <button type="button" role="radio" data-appearance="{{ value }}"
                     class="btn btn-sm h-10 gap-1.5 rounded-lg border-0 bg-transparent font-medium shadow-none aria-checked:bg-base-100 aria-checked:shadow-sm">
                 {{ icon(icon_name, "size-4") }} {{ label }}
@@ -37,7 +34,7 @@
     <!-- Account -->
     <section class="card-soft p-5">
         <div class="mb-4 flex items-center gap-3">
-            {{ icon_tile("user", "info") }}
+            {{ icon_tile("user", "primary") }}
             <div class="min-w-0 flex-1">
                 <h2 class="font-bold">Account</h2>
                 <p class="truncate text-xs text-base-content/60">Signed in as {{ request.state.user.username }}</p>
@@ -80,23 +77,18 @@
 {% block scripts %}
 <script>
     (function () {
-        var themes = { light: "loadpilot", dark: "loadpilot-dark" };
         var buttons = document.querySelectorAll("[data-appearance]");
-        function current() {
-            try { return localStorage.getItem("appearance") || "system"; } catch (e) { return "system"; }
-        }
-        function apply(choice) {
-            if (themes[choice]) document.documentElement.setAttribute("data-theme", themes[choice]);
-            else document.documentElement.removeAttribute("data-theme");
+        function select(choice) {
+            applyAppearance(choice);  // defined in base.html
             buttons.forEach(function (b) { b.setAttribute("aria-checked", b.dataset.appearance === choice ? "true" : "false"); });
         }
         buttons.forEach(function (button) {
             button.addEventListener("click", function () {
                 try { localStorage.setItem("appearance", button.dataset.appearance); } catch (e) {}
-                apply(button.dataset.appearance);
+                select(button.dataset.appearance);
             });
         });
-        apply(current());
+        select(savedAppearance());
     })();
 </script>
 {% endblock %}

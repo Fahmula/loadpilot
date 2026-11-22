@@ -12,7 +12,7 @@ from loadpilot.models import LoadStatus
 from loadpilot.routes import settings as settings_routes
 from loadpilot.routes import ui
 
-from .conftest import make_load
+from .conftest import TEST_USERNAME, make_load
 
 LOAD_FORM = {
     "broker_name": "Acme Logistics",
@@ -41,9 +41,13 @@ def test_health_reports_version(client):
 
 
 def test_pwa_assets_are_served(client):
-    assert client.get("/manifest.json").json()["name"] == "LoadPilot"
+    manifest = client.get("/manifest.json").json()
+    assert manifest["name"] == "LoadPilot"
     assert client.get("/sw.js").status_code == 200
-    assert client.get("/static/icon-192.png").headers["content-type"] == "image/png"
+    # Home screens that crop icons to their own shape need a maskable one
+    assert {icon["purpose"] for icon in manifest["icons"]} == {"any", "maskable"}
+    for path in [icon["src"] for icon in manifest["icons"]] + ["/static/apple-touch-icon.png"]:
+        assert client.get(path).headers["content-type"] == "image/png", path
 
 
 def test_pages_render(client):
@@ -58,7 +62,7 @@ def test_dashboard_shows_status_value_not_enum_name(client, db_path):
 
     assert "LoadStatus." not in body
     assert "Active" in body
-    assert "Current Load" in body
+    assert "Recent Loads" in body
 
 
 def test_create_load_from_form_keeps_broker_email(client):
@@ -275,7 +279,7 @@ def test_add_and_remove_charges(client, db_path):
     assert response.headers["location"] == f"/loads/{load.id}#charges"
     charges = client.get(f"/api/loads/{load.id}").json()["charges"]
     assert charges == [{"description": "Detention", "amount": 150.0}, {"description": "Lumper", "amount": 85.5}]
-    assert 'Total billed <strong class="text-success">$2,735.50</strong>' in client.get(f"/loads/{load.id}").text
+    assert 'Total billed <strong class="text-primary">$2,735.50</strong>' in client.get(f"/loads/{load.id}").text
 
     client.post(f"/loads/{load.id}/charges/0/delete")
 
@@ -476,7 +480,8 @@ def test_scanned_rate_con_is_saved_with_the_load(client, monkeypatch):
     load = client.get("/api/loads/").json()[0]
     assert load["rate_con_pdf_path"].startswith(f"static/ratecons/ratecon_{load['id']}_")
     assert client.get("/" + load["rate_con_pdf_path"]).content == b"%PDF-1.4 rc"
-    assert "Rate Con" in client.get(f"/loads/{load['id']}").text
+    detail = client.get(f"/loads/{load['id']}").text
+    assert f'href="/{load["rate_con_pdf_path"]}" download="RateCon-PO-1234.pdf"' in detail
 
 
 def test_create_load_ignores_a_bad_rate_con_reference(client):
@@ -651,8 +656,8 @@ def test_loads_tabs_filter_by_status(client, db_path):
     page = client.get("/loads?status=Active").text
     partial = client.get("/loads?status=Invoiced", headers={"HX-Request": "true"}).text
 
-    assert "#ACTIVE-1" in page and "#DONE-1" not in page
-    assert "#DONE-1" in partial and "#ACTIVE-1" not in partial
+    assert "ACTIVE-1" in page and "DONE-1" not in page
+    assert "DONE-1" in partial and "ACTIVE-1" not in partial
     assert "<html" not in partial
 
 
@@ -662,7 +667,7 @@ def test_loads_search(client, db_path):
 
     body = client.get("/loads?search=blue", headers={"HX-Request": "true"}).text
 
-    assert "#B-1" in body and "#A-1" not in body
+    assert "B-1" in body and "A-1" not in body
 
 
 def test_delete_load_redirects_to_loads(client, db_path):
@@ -674,14 +679,74 @@ def test_delete_load_redirects_to_loads(client, db_path):
     assert client.get(f"/api/loads/{load.id}").status_code == 404
 
 
-def test_dashboard_lists_loads_ready_to_invoice_and_activity(client, db_path):
-    delivered = seed(db_path, status=LoadStatus.DELIVERED, delivery_location="Smiley, TX")
+def test_dashboard_counts_and_recent_loads(client, db_path):
+    today = date.today()
+    seed(db_path, load_reference="RUN-1", status=LoadStatus.ACTIVE)
+    seed(db_path, load_reference="RUN-2", status=LoadStatus.ACTIVE)
+    delivered = seed(
+        db_path, load_reference="DONE-1", status=LoadStatus.DELIVERED, actual_delivery_date=today, loaded_miles=640
+    )
+    # Delivered last year: counts toward neither this month's revenue nor its miles
+    seed(db_path, status=LoadStatus.PAID, actual_delivery_date=today.replace(year=today.year - 1), rate_amount=999)
 
     body = client.get("/").text
 
-    assert "Ready to Invoice" in body
-    assert f"/loads/{delivered.id}#invoice" in body
-    assert "Load Added" in body
+    def card(label):
+        return re.search(rf">{label}</div>\s*<div[^>]*>([^<]*)<", body).group(1)
+
+    assert (card("Active Loads"), card("Delivered Loads")) == ("2", "1")
+    assert (card("Revenue"), card("Mileage")) == ("$2,500", "640 mi")  # this month only
+    assert 'href="/loads?status=Delivered"' in body
+    assert f'href="/loads/{delivered.id}"' in body and "DONE-1" in body
+
+
+def test_dashboard_greets_the_company(client):
+    assert TEST_USERNAME in client.get("/").text  # until a company name is saved
+
+    client.post("/settings/section/company", data={"company_name": "Fahmula Trucking LLC"})
+
+    assert "Fahmula Trucking LLC</h1>" in client.get("/").text
+
+
+@pytest.mark.parametrize(
+    ("status", "pickup", "current"),
+    [
+        (LoadStatus.ACTIVE, date.today() + timedelta(days=2), "Pickup"),
+        (LoadStatus.ACTIVE, date.today(), "In Transit"),
+        (LoadStatus.DELIVERED, date.today(), "Invoiced"),
+        (LoadStatus.INVOICED, date.today(), "Paid"),
+    ],
+)
+def test_load_timeline_marks_the_current_step(client, db_path, status, pickup, current):
+    load = seed(db_path, status=status, pickup_date=pickup, delivery_date=pickup + timedelta(days=2))
+
+    page = client.get(f"/loads/{load.id}").text
+
+    step = re.search(r'aria-current="step">.*?</li>', page, re.S).group(0)
+    assert f">{current}</span>" in step
+
+
+def test_paid_load_timeline_is_complete(client, db_path):
+    load = seed(db_path, status=LoadStatus.PAID, paid_at=date.today(), amount_paid=2500)
+
+    assert 'aria-current="step"' not in client.get(f"/loads/{load.id}").text
+
+
+def test_documents_download_with_readable_names(client, db_path):
+    load = seed(
+        db_path,
+        status=LoadStatus.INVOICED,
+        invoice_number="INV-1007",
+        invoiced_at=datetime(2026, 10, 4, 9),
+        bol_pdf_path="static/bols/bol_7_ab12cd_scan.jpg",
+        invoice_pdf_path="static/invoices/invoice_INV-1007.pdf",
+    )
+
+    page = client.get(f"/loads/{load.id}").text
+
+    assert 'download="BOL-PO-1234.jpg"' in page
+    assert 'download="Invoice-INV-1007.pdf"' in page
+    assert "No rate con on file" in page
 
 
 def test_new_load_page_warns_without_api_key(client, monkeypatch):
