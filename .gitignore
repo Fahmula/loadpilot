@@ -135,6 +135,8 @@ config
 desktop.ini
 *.json
 !manifest.json
+!release-please-config.json
+!.release-please-manifest.json
 model
 *.prof
 *.austin

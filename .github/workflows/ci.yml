@@ -7,8 +7,10 @@ on:
   # Lets the release workflow run the same checks before publishing an image
   workflow_call:
 
+# github.workflow is the caller's name when Release calls this, so the release
+# checks and the regular CI run for the same push to main don't cancel each other
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
