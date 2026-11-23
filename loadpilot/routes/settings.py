@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -13,10 +14,24 @@ Section = Literal["company", "ai", "bank"]
 
 # Which settings keys the simple cards edit (the AI card has its own handler)
 SECTION_FIELDS = {
-    "company": ("company_name", "street_address", "city_state_zip"),
+    "company": (
+        "company_name",
+        "street_address",
+        "city_state_zip",
+        "mc_number",
+        "dot_number",
+        "company_phone",
+        "company_email",
+    ),
     "bank": ("payment_terms_days", "bank_name", "account_number", "routing_number"),
 }
 TOGGLES = frozenset({"show_address_on_invoice", "show_bank_on_invoice"})
+
+# Carriers type these as "MC-123456" or "USDOT 1234567"; keep just the number, the invoice adds the label
+ID_PREFIXES = {
+    "mc_number": re.compile(r"^MC\s*[#:-]?\s*", re.I),
+    "dot_number": re.compile(r"^(US)?\s*DOT\s*[#:-]?\s*", re.I),
+}
 
 
 async def section_context(request: Request, section: str, editing: bool, provider: str | None = None) -> dict:
@@ -72,7 +87,10 @@ async def save_settings_section(request: Request, section: Literal["company", "b
     db = request.app.state.db
     form = await request.form()
     for key in SECTION_FIELDS[section]:
-        await db.save_setting(key, str(form.get(key, "")).strip())
+        value = str(form.get(key, "")).strip()
+        if key in ID_PREFIXES:
+            value = ID_PREFIXES[key].sub("", value)
+        await db.save_setting(key, value)
     return await render_section(request, section, editing=False)
 
 
