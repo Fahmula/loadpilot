@@ -6,12 +6,20 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
 from loadpilot.config import RATECON_DIR
-from loadpilot.documents import claim_pending, clean_pending, combine_pages, save_for_load, save_pending
+from loadpilot.documents import (
+    claim_pending,
+    clean_pending,
+    combine_pages,
+    image_pdf,
+    save_for_load,
+    save_pending,
+    with_document,
+)
 
 
-def png() -> bytes:
+def png(size=(40, 60)) -> bytes:
     buffer = io.BytesIO()
-    Image.new("RGB", (40, 60), "white").save(buffer, "PNG")
+    Image.new("RGB", size, "white").save(buffer, "PNG")
     return buffer.getvalue()
 
 
@@ -76,3 +84,34 @@ def test_clean_pending_removes_only_abandoned_files():
     assert (RATECON_DIR / fresh).exists()
     assert not (RATECON_DIR / stale).exists()
     assert (RATECON_DIR / kept.removeprefix("static/ratecons/")).exists()
+
+
+def page_sizes(content: bytes) -> list[tuple[int, int]]:
+    return [
+        (round(float(page.mediabox.width)), round(float(page.mediabox.height)))
+        for page in PdfReader(io.BytesIO(content)).pages
+    ]
+
+
+def test_photos_become_letter_sized_pages():
+    # A 12 MP phone photo, portrait and landscape: each fits Letter (612 x 792 pt) in its own orientation
+    assert page_sizes(image_pdf(png((3024, 4032)))) == [(594, 792)]
+    assert page_sizes(image_pdf(png((4032, 3024)))) == [(792, 594)]
+
+
+def test_bol_pages_follow_the_invoice(tmp_path):
+    photo, scan = tmp_path / "bol.jpg", tmp_path / "bol.pdf"
+    photo.write_bytes(png((1200, 1600)))
+    scan.write_bytes(pdf(pages=2))
+
+    assert len(PdfReader(io.BytesIO(with_document(pdf(), photo))).pages) == 2
+    assert len(PdfReader(io.BytesIO(with_document(pdf(), scan))).pages) == 3
+
+
+def test_unreadable_bol_leaves_the_invoice_alone(tmp_path):
+    broken = tmp_path / "bol.heic"
+    broken.write_bytes(b"not an image")
+    invoice = pdf()
+
+    assert with_document(invoice, broken) == invoice
+    assert with_document(invoice, tmp_path / "missing.pdf") == invoice
