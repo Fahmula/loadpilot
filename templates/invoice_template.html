@@ -11,8 +11,9 @@
         .band table, .meta, .lines, .totals { width: 100%; border-collapse: collapse; }
         .company { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
         .company-address { color: #b8c4e0; margin-top: 4px; }
+        .company-ids { color: #e2e8f5; margin-top: 4px; font-weight: 600; letter-spacing: 0.2px; }
         .title { text-align: right; font-size: 30px; font-weight: 800; letter-spacing: 3px; color: #ffffff; }
-        .title-number { text-align: right; color: #8fb3ff; font-weight: 600; margin-top: 2px; }
+        .title-number { text-align: right; color: #b8c4e0; font-weight: 600; margin-top: 2px; }
         .content { padding: 36px 48px; }
         .label { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #64748b; margin-bottom: 4px; }
         .meta td { vertical-align: top; padding-bottom: 28px; }
@@ -23,7 +24,7 @@
         .lines .amount { text-align: right; font-weight: 700; white-space: nowrap; }
         .totals { width: 46%; margin: 24px 0 0 auto; }
         .totals td { padding: 8px 12px; }
-        .totals .due td { background: #1f6bff; color: #ffffff; font-size: 16px; font-weight: 800; padding: 12px; }
+        .totals .due td { background: #0b1a3a; color: #ffffff; font-size: 16px; font-weight: 800; padding: 12px; }
         /* Round only the outer corners so the two cells read as one bar */
         .totals .due td:first-child { border-radius: 6px 0 0 6px; }
         .totals .due td:last-child { border-radius: 0 6px 6px 0; }
@@ -40,10 +41,18 @@
             <tr>
                 <td>
                     <div class="company">{{ settings.company_name or 'My Trucking Co' }}</div>
+                    {% if settings.mc_number or settings.dot_number %}
+                    <div class="company-ids">
+                        {% if settings.mc_number %}MC# {{ settings.mc_number }}{% endif %}{% if settings.mc_number and settings.dot_number %} &nbsp;·&nbsp; {% endif %}{% if settings.dot_number %}USDOT# {{ settings.dot_number }}{% endif %}
+                    </div>
+                    {% endif %}
                     {% if settings.show_address_on_invoice %}
                     <div class="company-address">
                         {{ settings.street_address or '' }}{% if settings.street_address and settings.city_state_zip %}<br>{% endif %}{{ settings.city_state_zip or '' }}
                     </div>
+                    {% endif %}
+                    {% if settings.company_phone or settings.company_email %}
+                    <div class="company-address">{{ [settings.company_phone, settings.company_email] | select | join(" · ") }}</div>
                     {% endif %}
                 </td>
                 <td>
@@ -90,7 +99,7 @@
             <tbody>
                 <tr>
                     <td>
-                        <strong>Freight Transportation Services</strong><br>
+                        <strong>Line Haul</strong><br>
                         <span class="muted">Load #{{ load.load_reference }}{% if load.loaded_miles %} · {{ "{:,}".format(load.loaded_miles) }} loaded mi{% endif %}</span>
                         {% for stop in load.stops %}
                         <br><span class="muted">Stop: {{ "Pickup" if stop.kind == "pickup" else "Drop" }} {{ stop.location }}{% if stop.stop_date %}, {{ stop.stop_date.strftime("%b %d, %Y") }}{% endif %}</span>

@@ -782,6 +782,47 @@ def test_settings_section_edit_and_save(client):
     assert "Fahmula Trucking LLC" in client.get("/settings").text
 
 
+@pytest.mark.parametrize(
+    ("typed_mc", "typed_dot"), [("123456", "7654321"), ("MC-123456", "USDOT 7654321"), ("mc# 123456", "DOT:7654321")]
+)
+def test_carrier_numbers_are_saved_without_their_prefix(client, typed_mc, typed_dot):
+    client.post("/settings/section/company", data={"mc_number": typed_mc, "dot_number": typed_dot})
+
+    edit = client.get("/settings/section/company?edit=true").text
+
+    assert 'name="mc_number" class="input w-full" placeholder="MC #" value="123456"' in edit
+    assert 'name="dot_number" class="input w-full" placeholder="USDOT #" value="7654321"' in edit
+
+
+def test_settings_asks_for_carrier_numbers_until_set(client):
+    assert "Add your MC and USDOT numbers" in client.get("/settings").text
+
+    client.post("/settings/section/company", data={"company_name": "Fahmula Trucking LLC", "mc_number": "123456"})
+
+    assert "Add your MC and USDOT numbers" not in client.get("/settings").text
+
+
+def test_invoice_header_has_carrier_numbers_and_contact(client, db_path, rendered_invoices):
+    client.post(
+        "/settings/section/company",
+        data={
+            "company_name": "Fahmula Trucking LLC",
+            "mc_number": "MC-123456",
+            "dot_number": "7654321",
+            "company_phone": "(555) 010-2030",
+            "company_email": "billing@fahmula.example",
+        },
+    )
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+
+    invoice = rendered_invoices[0]
+    assert "MC# 123456" in invoice and "USDOT# 7654321" in invoice
+    assert "(555) 010-2030 · billing@fahmula.example" in invoice
+    assert "Line Haul" in invoice
+
+
 def test_settings_masks_secrets(client):
     client.post("/settings/section/bank", data={"bank_name": "Sikorsky CU", "account_number": "9876541234"})
     configure_ai(client, api_key="AIzaSecretKeyAbcd")
