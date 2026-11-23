@@ -14,7 +14,7 @@ from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config,
 from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables
 from loadpilot.brokers import apply_known_broker, known_brokers
 from loadpilot.config import BOL_DIR, INVOICE_DIR
-from loadpilot.documents import claim_pending, save_for_load, save_pending
+from loadpilot.documents import claim_pending, save_for_load, save_pending, with_document
 from loadpilot.geo import estimate_road_miles, nearest_place
 from loadpilot.models import Charge, Load, LoadStatus, Stop
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
@@ -271,7 +271,11 @@ async def update_load_status(request: Request, load_id: int, new_status: str):
 
 
 async def write_invoice(load: Load, settings: dict) -> str:
-    """Renders the invoice PDF for load.invoice_number, dated load.invoiced_at; returns its web path."""
+    """Renders the invoice PDF for load.invoice_number, dated load.invoiced_at; returns its web path.
+
+    The signed BOL, when the load has one, follows as the last pages: brokers want the proof of delivery
+    in the same file as the invoice.
+    """
     terms = payment_terms(settings)
     html_content = templates.get_template("invoice_template.html").render(
         {
@@ -283,8 +287,11 @@ async def write_invoice(load: Load, settings: dict) -> str:
             "due_date": due_date(load, terms).strftime("%b %d, %Y"),
         }
     )
+    pdf = await asyncio.to_thread(HTML(string=html_content).write_pdf)
+    if load.bol_pdf_path:
+        pdf = await asyncio.to_thread(with_document, pdf, BOL_DIR / Path(load.bol_pdf_path).name)
     pdf_filename = f"invoice_{load.invoice_number}.pdf"
-    await asyncio.to_thread(HTML(string=html_content).write_pdf, str(INVOICE_DIR / pdf_filename))
+    (INVOICE_DIR / pdf_filename).write_bytes(pdf)
     return f"static/invoices/{pdf_filename}"
 
 
@@ -302,17 +309,15 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     with open(str(bol_physical_path), "wb") as buffer:
         await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
 
-    invoiced = {"invoice_number": f"INV-{1000 + load.id}", "invoiced_at": datetime.now().replace(microsecond=0)}
+    invoiced = {
+        "invoice_number": f"INV-{1000 + load.id}",
+        "invoiced_at": datetime.now().replace(microsecond=0),
+        "bol_pdf_path": f"static/bols/{bol_filename}",
+    }
     invoice_web_path = await write_invoice(load.model_copy(update=invoiced), settings)
 
     await db.update_load(
-        load_id,
-        {
-            **invoiced,
-            "status": LoadStatus.INVOICED.value,
-            "bol_pdf_path": f"static/bols/{bol_filename}",
-            "invoice_pdf_path": invoice_web_path,
-        },
+        load_id, {**invoiced, "status": LoadStatus.INVOICED.value, "invoice_pdf_path": invoice_web_path}
     )
 
     return RedirectResponse(url=f"/loads/{load_id}", status_code=303)

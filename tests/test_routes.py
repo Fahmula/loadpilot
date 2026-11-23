@@ -1,9 +1,12 @@
 import asyncio
+import io
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from PIL import Image
+from pypdf import PdfReader, PdfWriter
 
 from loadpilot.ai import AIError, Model
 from loadpilot.config import BOL_DIR, INVOICE_DIR, RATECON_DIR
@@ -242,6 +245,19 @@ def test_generate_invoice(client, db_path):
     assert client.get("/" + invoiced["invoice_pdf_path"]).status_code == 200
 
 
+def blank_pdf(pages: int = 1) -> bytes:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=612, height=792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+def pdf_pages(path: Path) -> int:
+    return len(PdfReader(path).pages)
+
+
 @pytest.fixture
 def rendered_invoices(monkeypatch) -> list[str]:
     """Captures the HTML of each invoice instead of rendering a real PDF."""
@@ -251,11 +267,32 @@ def rendered_invoices(monkeypatch) -> list[str]:
         def __init__(self, string):
             rendered.append(string)
 
-        def write_pdf(self, path):
-            Path(path).write_bytes(b"%PDF")
+        def write_pdf(self):
+            return blank_pdf()
 
     monkeypatch.setattr(ui, "HTML", FakeHTML)
     return rendered
+
+
+def test_invoice_pdf_ends_with_the_signed_bol(client, db_path, rendered_invoices):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(2), "application/pdf")})
+    invoice = INVOICE_DIR / f"invoice_INV-{1000 + load.id}.pdf"
+
+    assert pdf_pages(invoice) == 3  # the invoice page, then both BOL pages
+    client.post(f"/loads/{load.id}/rebuild-invoice")
+    assert pdf_pages(invoice) == 3  # rebuilding adds the BOL again, not twice
+
+
+def test_bol_photo_becomes_a_page_of_the_invoice(client, db_path, rendered_invoices):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+    photo = io.BytesIO()
+    Image.new("RGB", (900, 1200), "white").save(photo, "JPEG")
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.jpg", photo.getvalue(), "image/jpeg")})
+
+    assert pdf_pages(INVOICE_DIR / f"invoice_INV-{1000 + load.id}.pdf") == 2
 
 
 def test_invoice_shows_terms_and_due_date(client, db_path, rendered_invoices):

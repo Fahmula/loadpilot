@@ -25,12 +25,44 @@ PENDING_MAX_AGE = 24 * 60 * 60
 
 Page = tuple[bytes, str, str | None]  # (content, content type, filename), as uploaded
 
+LETTER_INCHES = (8.5, 11)
+MAX_IMAGE_SIDE = 2200  # px: about 200 dpi on a Letter page, sharp enough for a signed BOL or rate con
+
 
 def extension_for(content_type: str, filename: str | None) -> str | None:
     suffix = Path(filename or "").suffix.lower()
     if suffix not in EXTENSIONS:
         suffix = mimetypes.guess_extension(content_type or "") or ""
     return suffix if suffix in EXTENSIONS else None
+
+
+def image_pdf(content: bytes) -> bytes:
+    """A photo or screenshot as a one-page PDF that fits a Letter page in the photo's own orientation."""
+    image = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert("RGB")
+    image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    short_side, long_side = sorted(image.size)
+    dpi = max(short_side / LETTER_INCHES[0], long_side / LETTER_INCHES[1])
+    page = io.BytesIO()
+    image.save(page, "PDF", resolution=dpi)
+    return page.getvalue()
+
+
+def with_document(pdf: bytes, document: Path) -> bytes:
+    """pdf followed by every page of document (a PDF or a photo), e.g. an invoice with its signed BOL.
+
+    If the document can't be read, pdf comes back unchanged so the invoice still goes out.
+    """
+    try:
+        content = document.read_bytes()
+        writer = PdfWriter()
+        writer.append(io.BytesIO(pdf))
+        writer.append(io.BytesIO(content if document.suffix.lower() == ".pdf" else image_pdf(content)))
+        merged = io.BytesIO()
+        writer.write(merged)
+        return merged.getvalue()
+    except Exception as e:
+        logger.warning(f"Could not add {document.name} to the PDF: {e}")
+        return pdf
 
 
 def combine_pages(pages: list[Page]) -> tuple[bytes, str] | None:
@@ -42,13 +74,8 @@ def combine_pages(pages: list[Page]) -> tuple[bytes, str] | None:
 
     writer = PdfWriter()
     for content, content_type, filename in pages:
-        if extension_for(content_type, filename) == ".pdf":
-            writer.append(io.BytesIO(content))
-        else:
-            image = ImageOps.exif_transpose(Image.open(io.BytesIO(content))).convert("RGB")
-            page = io.BytesIO()
-            image.save(page, "PDF")
-            writer.append(page)
+        is_pdf = extension_for(content_type, filename) == ".pdf"
+        writer.append(io.BytesIO(content if is_pdf else image_pdf(content)))
     merged = io.BytesIO()
     writer.write(merged)
     return merged.getvalue(), ".pdf"
