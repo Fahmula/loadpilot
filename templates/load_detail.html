@@ -195,6 +195,12 @@
 
         {% elif load.status == "Delivered" %}
         <form id="invoice" method="post" action="/generate-invoice/{{ load.id }}" enctype="multipart/form-data" class="mt-5 scroll-mt-6 border-t border-base-300 pt-5" data-loading-form>
+            {% if request.query_params.get("bol_error") %}
+            <div role="alert" class="alert alert-soft alert-error mb-4 text-sm">
+                {{ icon("circle-alert", "size-5") }}
+                <span>LoadPilot couldn't read that file, so no invoice was made. Attach the signed BOL as a PDF or a photo.</span>
+            </div>
+            {% endif %}
             <p class="mb-3 text-sm text-base-content/70">Attach the signed BOL. LoadPilot builds the invoice PDF with the BOL as its last page.</p>
             <label class="btn btn-outline btn-lg w-full rounded-2xl border-base-300 font-semibold" data-file-drop>
                 {{ icon("paperclip", "size-5 shrink-0 text-primary") }}
@@ -228,7 +234,12 @@
             <p class="mt-4 flex items-center gap-2 text-sm text-base-content/70">{{ icon("clock", "size-4") }} Payment due {{ due | short_date }} (net {{ terms }})</p>
             {% endif %}
             {% if load.invoice_pdf_path %}
-            {% if request.query_params.get("rebuilt") %}
+            {% if request.query_params.get("bol_missing") %}
+            <div role="alert" class="alert alert-soft alert-warning mt-4 text-sm">
+                {{ icon("circle-alert", "size-5") }}
+                <span>Invoice rebuilt, but the BOL on file couldn't be read, so it isn't in the PDF. Send the BOL along with it.</span>
+            </div>
+            {% elif request.query_params.get("rebuilt") %}
             <p class="mt-4 flex items-center gap-2 text-sm text-success">{{ icon("circle-check", "size-4") }} Invoice rebuilt with the latest details.</p>
             {% endif %}
             <div class="mt-4 grid grid-cols-2 gap-3">

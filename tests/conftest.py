@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 import tempfile
@@ -30,6 +31,17 @@ async def db(db_path):
     manager = DatabaseManager(db_path=str(db_path))
     await manager.init_db()
     return manager
+
+
+# A 64x96 HEIC photo (HEVC Main, 4:2:0), the format iPhones and many Android phones save in
+HEIC_PHOTO = base64.b64decode(
+    "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAVZtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAA"
+    "ACJpbG9jAAAAAERAAAEAAQAAAAABegABAAAAAAAAACIAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRt"
+    "AAAAAAABAAAA1mlwcnAAAAC3aXBjbwAAAHhodmNDAQNwAAAAkAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMA"
+    "AAMAHroCQGEAAQArQgEBA3AAAAMAkAAAAwAAAwAeoCCBhZbqSSmubgIaDAgAAAMAyAAAAwAIQGIAAQAHRAHBcrAiQAAAABNjb2xy"
+    "bmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAYAAAABBwaXhpAAAAAAMICAgAAAAXaXBtYQAAAAAAAAABAAEEgQIDBAAAACpt"
+    "ZGF0AAAAHigBrwQY/HNs5zAif+CzNt5x0aajiPfGrmp/NaqzgA=="
+)
 
 
 TEST_USERNAME = "driver"

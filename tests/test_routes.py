@@ -15,7 +15,7 @@ from loadpilot.models import LoadStatus
 from loadpilot.routes import settings as settings_routes
 from loadpilot.routes import ui
 
-from .conftest import TEST_USERNAME, make_load
+from .conftest import HEIC_PHOTO, TEST_USERNAME, make_load
 
 LOAD_FORM = {
     "broker_name": "Acme Logistics",
@@ -215,8 +215,21 @@ def test_api_missing_load_returns_404(client):
     assert client.delete("/api/loads/999").status_code == 404
 
 
+def blank_pdf(pages: int = 1) -> bytes:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=612, height=792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+def pdf_pages(path: Path) -> int:
+    return len(PdfReader(path).pages)
+
+
 def test_generate_invoice_for_missing_load_returns_404(client):
-    response = client.post("/generate-invoice/999", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+    response = client.post("/generate-invoice/999", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")})
 
     assert response.status_code == 404
 
@@ -226,7 +239,7 @@ def test_generate_invoice(client, db_path):
 
     response = client.post(
         f"/generate-invoice/{load.id}",
-        files={"bol_file": ("../../escape.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"bol_file": ("../../escape.pdf", blank_pdf(), "application/pdf")},
         follow_redirects=False,
     )
 
@@ -243,19 +256,6 @@ def test_generate_invoice(client, db_path):
     bol_path = (BOL_DIR / invoiced["bol_pdf_path"].removeprefix("static/bols/")).resolve()
     assert bol_path.parent == BOL_DIR.resolve()
     assert client.get("/" + invoiced["invoice_pdf_path"]).status_code == 200
-
-
-def blank_pdf(pages: int = 1) -> bytes:
-    writer = PdfWriter()
-    for _ in range(pages):
-        writer.add_blank_page(width=612, height=792)
-    buffer = io.BytesIO()
-    writer.write(buffer)
-    return buffer.getvalue()
-
-
-def pdf_pages(path: Path) -> int:
-    return len(PdfReader(path).pages)
 
 
 @pytest.fixture
@@ -295,11 +295,57 @@ def test_bol_photo_becomes_a_page_of_the_invoice(client, db_path, rendered_invoi
     assert pdf_pages(INVOICE_DIR / f"invoice_INV-{1000 + load.id}.pdf") == 2
 
 
+def test_heic_bol_is_kept_as_a_pdf(client, db_path, rendered_invoices):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("IMG_0412.HEIC", HEIC_PHOTO, "image/heic")})
+
+    bol_path = client.get(f"/api/loads/{load.id}").json()["bol_pdf_path"]
+    assert bol_path.endswith(".pdf")
+    assert client.get("/" + bol_path).headers["content-type"] == "application/pdf"  # opens in any browser
+    assert pdf_pages(INVOICE_DIR / f"invoice_INV-{1000 + load.id}.pdf") == 2
+
+
+def test_unreadable_bol_is_refused_and_nothing_is_invoiced(client, db_path, rendered_invoices):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+    bols_before = set(BOL_DIR.iterdir())
+
+    response = client.post(
+        f"/generate-invoice/{load.id}",
+        files={"bol_file": ("bol.heic", b"not a photo", "image/heic")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/loads/{load.id}?bol_error=1#invoice"
+    unchanged = client.get(f"/api/loads/{load.id}").json()
+    assert unchanged["status"] == "Delivered"
+    assert unchanged["invoice_number"] is None
+    assert unchanged["bol_pdf_path"] is None
+    assert set(BOL_DIR.iterdir()) == bols_before
+    assert rendered_invoices == []
+    page = client.get(response.headers["location"]).text
+    assert "couldn't read that file, so no invoice was made" in page
+    assert f"/generate-invoice/{load.id}" in page  # the driver can attach it again
+
+
+def test_rebuild_says_when_the_bol_is_left_out(client, db_path, rendered_invoices):
+    load = invoiced_load(db_path, days_ago=3, bol_pdf_path="static/bols/bol_gone.jpg")
+
+    response = client.post(f"/loads/{load.id}/rebuild-invoice", follow_redirects=False)
+
+    assert response.headers["location"] == f"/loads/{load.id}?rebuilt=1&bol_missing=1#payment"
+    assert pdf_pages(INVOICE_DIR / "invoice_INV-1001.pdf") == 1  # still rebuilt, just without the BOL
+    page = client.get(response.headers["location"]).text
+    assert "the BOL on file couldn't be read" in page
+    assert "Invoice rebuilt with the latest details" not in page
+
+
 def test_invoice_shows_terms_and_due_date(client, db_path, rendered_invoices):
     rendered = rendered_invoices
     load = seed(db_path, status=LoadStatus.DELIVERED)
     client.post("/settings/section/bank", data={"payment_terms_days": "15"})
-    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")})
 
     assert "Net 15" in rendered[0]
     assert (date.today() + timedelta(days=15)).strftime("%b %d, %Y") in rendered[0]
@@ -341,7 +387,7 @@ def test_charges_are_validated(client, db_path):
 def test_invoice_bills_rate_plus_charges(client, db_path, rendered_invoices):
     load = seed(db_path, status=LoadStatus.DELIVERED, charges=[{"description": "Detention", "amount": 150.0}])
 
-    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")})
 
     assert "Detention" in rendered_invoices[0]
     assert "$150.00" in rendered_invoices[0]
@@ -352,7 +398,7 @@ def test_invoice_lists_extra_stops(client, db_path, rendered_invoices):
     stops = [{"kind": "delivery", "location": "Macon, GA", "stop_date": "2026-10-02"}]
     load = seed(db_path, status=LoadStatus.DELIVERED, stops=stops)
 
-    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")})
 
     assert "Stop: Drop Macon, GA, Oct 02, 2026" in rendered_invoices[0]
 
@@ -533,7 +579,7 @@ def test_attach_rate_con_to_an_existing_load(client, db_path):
 
     response = client.post(
         f"/loads/{load.id}/rate-con",
-        files={"rate_con": ("../../rc.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"rate_con": ("../../rc.pdf", blank_pdf(), "application/pdf")},
         follow_redirects=False,
     )
 
@@ -852,7 +898,7 @@ def test_invoice_header_has_carrier_numbers_and_contact(client, db_path, rendere
     )
     load = seed(db_path, status=LoadStatus.DELIVERED)
 
-    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", b"%PDF-1.4", "application/pdf")})
+    client.post(f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")})
 
     invoice = rendered_invoices[0]
     assert "MC# 123456" in invoice and "USDOT# 7654321" in invoice
