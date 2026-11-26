@@ -1,16 +1,23 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 import app as app_module
+from loadpilot import auth
 from loadpilot.auth import hash_password, is_public_path, safe_next_path, verify_password
 from loadpilot.cli import reset_password
 
 from .conftest import TEST_PASSWORD, TEST_USERNAME
 
 
-def login(client, username=TEST_USERNAME, password=TEST_PASSWORD, next_path="/"):
+def login(client, username=TEST_USERNAME, password=TEST_PASSWORD, next_path="/", headers=None):
     return client.post(
-        "/login", data={"username": username, "password": password, "next": next_path}, follow_redirects=False
+        "/login",
+        data={"username": username, "password": password, "next": next_path},
+        headers=headers,
+        follow_redirects=False,
     )
 
 
@@ -171,6 +178,79 @@ def test_login_is_throttled_after_repeated_failures(client):
 
     assert blocked.status_code == 429
     assert "Too many failed attempts" in blocked.text
+
+
+# -----------------------------------------
+# Behind a reverse proxy (Caddy)
+# -----------------------------------------
+CADDY = ("172.18.0.5", 50000)  # Caddy's address on the Docker network
+
+
+def behind_caddy(forwarded_allow_ips: str) -> TestClient:
+    """LoadPilot as uvicorn serves it behind Caddy, which connects from its Docker address and passes each
+    visitor's address and scheme in X-Forwarded-* headers. uvicorn applies them from FORWARDED_ALLOW_IPS only."""
+    return TestClient(ProxyHeadersMiddleware(app_module.app, trusted_hosts=forwarded_allow_ips), client=CADDY)
+
+
+def visitor(address: str) -> dict:
+    return {"X-Forwarded-For": address, "X-Forwarded-Proto": "https"}
+
+
+@pytest.fixture
+def app_log(caplog):
+    """Records LoadPilot's log, whose loggers don't propagate to pytest's root handler."""
+    logger = logging.getLogger("loadpilot")
+    logger.addHandler(caplog.handler)
+    yield caplog
+    logger.removeHandler(caplog.handler)
+
+
+def test_session_cookie_is_secure_over_https(db_path):
+    with TestClient(app_module.app, base_url="https://loadpilot.example") as https_client:
+        response = https_client.post(
+            "/setup",
+            data={"username": TEST_USERNAME, "password": TEST_PASSWORD, "confirm_password": TEST_PASSWORD},
+            follow_redirects=False,
+        )
+
+        assert "secure" in response.headers["set-cookie"].lower()
+        assert https_client.get("/", follow_redirects=False).status_code == 200  # and it comes back over HTTPS
+
+
+def test_session_cookie_still_works_over_plain_http(client):
+    client.cookies.clear()
+
+    response = login(client)  # e.g. http://192.168.1.20:8000 on the home network
+
+    assert "secure" not in response.headers["set-cookie"].lower()
+    assert client.get("/", follow_redirects=False).status_code == 200
+
+
+def test_behind_trusted_caddy_failed_logins_only_block_that_visitor(client, app_log):
+    with behind_caddy(forwarded_allow_ips="172.16.0.0/12") as caddy:
+        for _ in range(5):
+            login(caddy, password="wrong-password", headers=visitor("203.0.113.7"))
+
+        assert login(caddy, headers=visitor("203.0.113.7")).status_code == 429
+        owner = login(caddy, headers=visitor("198.51.100.20"))
+
+    assert owner.status_code == 303  # someone else guessing doesn't lock the owner out
+    assert "secure" in owner.headers["set-cookie"].lower()  # Caddy's HTTPS reaches the cookie
+    assert "FORWARDED_ALLOW_IPS" not in app_log.text
+
+
+def test_behind_untrusted_caddy_everyone_shares_one_limit_and_it_is_logged(client, app_log, monkeypatch):
+    monkeypatch.setattr(auth, "_untrusted_proxy_logged", False)
+
+    with behind_caddy(forwarded_allow_ips="127.0.0.1,::1") as caddy:  # uvicorn's default
+        for _ in range(5):
+            login(caddy, password="wrong-password", headers=visitor("203.0.113.7"))
+        owner = login(caddy, headers=visitor("198.51.100.20"))
+
+    assert owner.status_code == 429
+    warnings = [record.getMessage() for record in app_log.records if "FORWARDED_ALLOW_IPS" in record.getMessage()]
+    assert len(warnings) == 1  # once, not on every request
+    assert "proxy at 172.18.0.5" in warnings[0]
 
 
 def test_logout_ends_session(client):
