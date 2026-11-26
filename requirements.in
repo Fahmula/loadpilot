@@ -9,4 +9,5 @@ python-dotenv
 weasyprint
 itsdangerous
 pillow
+pi-heif
 pypdf

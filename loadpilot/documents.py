@@ -12,12 +12,16 @@ import time
 import uuid
 from pathlib import Path
 
+from pi_heif import register_heif_opener
 from PIL import Image, ImageOps
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 from loadpilot.config import RATECON_DIR
 
 logger = logging.getLogger("loadpilot.documents")
+
+# iPhones and many Android phones save photos as HEIC, which Pillow can't open on its own
+register_heif_opener()
 
 EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif"}
 PENDING_NAME = re.compile(r"^pending_[0-9a-f]{32}\.[a-z]{3,4}$")
@@ -47,22 +51,43 @@ def image_pdf(content: bytes) -> bytes:
     return page.getvalue()
 
 
+class UnreadableDocument(Exception):
+    """A file that is neither a PDF nor a photo LoadPilot can read, or one that's gone missing."""
+
+
+def as_pdf(content: bytes) -> bytes:
+    """A document as PDF pages: a PDF once it's known to open, a photo or screenshot as one Letter page.
+
+    Raises UnreadableDocument for anything else, so a signed BOL is checked before an invoice depends on it.
+    """
+    try:
+        # Sniff the content rather than trust the name: phones send photos called "image" or "document"
+        if b"%PDF-" in content[:1024]:
+            if not len(PdfReader(io.BytesIO(content)).pages):
+                raise ValueError("the PDF has no pages")
+            return content
+        return image_pdf(content)
+    except Exception as e:
+        raise UnreadableDocument(str(e)) from e
+
+
 def with_document(pdf: bytes, document: Path) -> bytes:
     """pdf followed by every page of document (a PDF or a photo), e.g. an invoice with its signed BOL.
 
-    If the document can't be read, pdf comes back unchanged so the invoice still goes out.
+    Raises UnreadableDocument if the document is missing or can't be read; pdf is never returned without it.
     """
     try:
-        content = document.read_bytes()
+        pages = as_pdf(document.read_bytes())
         writer = PdfWriter()
         writer.append(io.BytesIO(pdf))
-        writer.append(io.BytesIO(content if document.suffix.lower() == ".pdf" else image_pdf(content)))
+        writer.append(io.BytesIO(pages))
         merged = io.BytesIO()
         writer.write(merged)
         return merged.getvalue()
+    except UnreadableDocument:
+        raise
     except Exception as e:
-        logger.warning(f"Could not add {document.name} to the PDF: {e}")
-        return pdf
+        raise UnreadableDocument(f"could not add {document.name}: {e}") from e
 
 
 def combine_pages(pages: list[Page]) -> tuple[bytes, str] | None:

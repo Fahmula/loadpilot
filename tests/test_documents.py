@@ -2,11 +2,14 @@ import io
 import os
 import time
 
+import pytest
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
 from loadpilot.config import RATECON_DIR
 from loadpilot.documents import (
+    UnreadableDocument,
+    as_pdf,
     claim_pending,
     clean_pending,
     combine_pages,
@@ -15,6 +18,8 @@ from loadpilot.documents import (
     save_pending,
     with_document,
 )
+
+from .conftest import HEIC_PHOTO
 
 
 def png(size=(40, 60)) -> bytes:
@@ -108,10 +113,31 @@ def test_bol_pages_follow_the_invoice(tmp_path):
     assert len(PdfReader(io.BytesIO(with_document(pdf(), scan))).pages) == 3
 
 
-def test_unreadable_bol_leaves_the_invoice_alone(tmp_path):
-    broken = tmp_path / "bol.heic"
-    broken.write_bytes(b"not an image")
-    invoice = pdf()
+def test_heic_photo_becomes_a_page(tmp_path):
+    assert page_sizes(as_pdf(HEIC_PHOTO)) == [(528, 792)]
 
-    assert with_document(invoice, broken) == invoice
-    assert with_document(invoice, tmp_path / "missing.pdf") == invoice
+    photo = tmp_path / "bol.heic"
+    photo.write_bytes(HEIC_PHOTO)
+    assert len(PdfReader(io.BytesIO(with_document(pdf(), photo))).pages) == 2
+
+
+def test_pdfs_are_kept_as_is_whatever_their_name():
+    scan = pdf(pages=2)
+
+    assert as_pdf(scan) == scan
+
+
+@pytest.mark.parametrize("content", [b"not an image", b"%PDF-1.4 truncated", b""])
+def test_unreadable_documents_are_refused(content):
+    with pytest.raises(UnreadableDocument):
+        as_pdf(content)
+
+
+def test_invoice_is_never_returned_without_its_document(tmp_path):
+    broken = tmp_path / "bol.jpg"
+    broken.write_bytes(b"not an image")
+
+    with pytest.raises(UnreadableDocument):
+        with_document(pdf(), broken)
+    with pytest.raises(UnreadableDocument):
+        with_document(pdf(), tmp_path / "missing.pdf")

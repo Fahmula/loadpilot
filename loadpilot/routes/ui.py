@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import shutil
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -14,7 +13,14 @@ from loadpilot.ai import AIError, extract_rate_con, list_models, load_ai_config,
 from loadpilot.analytics import build_analytics, due_date, payment_terms, receivables
 from loadpilot.brokers import apply_known_broker, known_brokers
 from loadpilot.config import BOL_DIR, INVOICE_DIR
-from loadpilot.documents import claim_pending, save_for_load, save_pending, with_document
+from loadpilot.documents import (
+    UnreadableDocument,
+    as_pdf,
+    claim_pending,
+    save_for_load,
+    save_pending,
+    with_document,
+)
 from loadpilot.geo import estimate_road_miles, nearest_place
 from loadpilot.models import Charge, Load, LoadStatus, Stop
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
@@ -274,7 +280,7 @@ async def write_invoice(load: Load, settings: dict) -> str:
     """Renders the invoice PDF for load.invoice_number, dated load.invoiced_at; returns its web path.
 
     The signed BOL, when the load has one, follows as the last pages: brokers want the proof of delivery
-    in the same file as the invoice.
+    in the same file as the invoice. Raises UnreadableDocument, before writing anything, if it can't be added.
     """
     terms = payment_terms(settings)
     html_content = templates.get_template("invoice_template.html").render(
@@ -301,20 +307,21 @@ async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile 
     load = await get_load_or_404(db, load_id)
     settings = await db.get_all_settings()
 
-    # Keep only the base name so a crafted filename can't escape the BOL directory
-    original_name = Path(bol_file.filename or "bol").name
-    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}_{original_name}"
-    bol_physical_path = BOL_DIR / bol_filename
-
-    with open(str(bol_physical_path), "wb") as buffer:
-        await asyncio.to_thread(shutil.copyfileobj, bol_file.file, buffer)
-
+    # Kept as a PDF, the BOL opens in any browser (a phone's HEIC photo wouldn't) and matches the invoice's pages
+    bol_filename = f"bol_{load_id}_{uuid.uuid4().hex[:6]}.pdf"
     invoiced = {
         "invoice_number": f"INV-{1000 + load.id}",
         "invoiced_at": datetime.now().replace(microsecond=0),
         "bol_pdf_path": f"static/bols/{bol_filename}",
     }
-    invoice_web_path = await write_invoice(load.model_copy(update=invoiced), settings)
+    # The BOL is the proof of delivery the broker pays against, so no BOL means no invoice
+    try:
+        (BOL_DIR / bol_filename).write_bytes(await asyncio.to_thread(as_pdf, await bol_file.read()))
+        invoice_web_path = await write_invoice(load.model_copy(update=invoiced), settings)
+    except UnreadableDocument as e:
+        (BOL_DIR / bol_filename).unlink(missing_ok=True)
+        logger.warning(f"Refused BOL {bol_file.filename!r} for load {load_id}: {e}")
+        return RedirectResponse(url=f"/loads/{load_id}?bol_error=1#invoice", status_code=303)
 
     await db.update_load(
         load_id, {**invoiced, "status": LoadStatus.INVOICED.value, "invoice_pdf_path": invoice_web_path}
@@ -332,9 +339,17 @@ async def rebuild_invoice(request: Request, load_id: int):
         raise HTTPException(status_code=409, detail="This load has no invoice yet")
     # Invoices from before invoiced_at was recorded are dated today
     load = load.model_copy(update={"invoiced_at": load.invoiced_at or datetime.now().replace(microsecond=0)})
-    invoice_web_path = await write_invoice(load, await db.get_all_settings())
+    settings = await db.get_all_settings()
+    rebuilt = "rebuilt=1"
+    try:
+        invoice_web_path = await write_invoice(load, settings)
+    except UnreadableDocument as e:
+        # A BOL saved before uploads were checked, or one that went missing: rebuild anyway and say so
+        logger.warning(f"Rebuilt invoice {load.invoice_number} without its BOL: {e}")
+        invoice_web_path = await write_invoice(load.model_copy(update={"bol_pdf_path": None}), settings)
+        rebuilt += "&bol_missing=1"
     await db.update_load(load_id, {"invoice_pdf_path": invoice_web_path})
-    return RedirectResponse(url=f"/loads/{load_id}?rebuilt=1#payment", status_code=303)
+    return RedirectResponse(url=f"/loads/{load_id}?{rebuilt}#payment", status_code=303)
 
 
 @router.post("/loads/{load_id}/charges")
