@@ -35,7 +35,7 @@ class Totals:
         return self.empty_miles / total * 100 if total else 0.0
 
     def add(self, load: Load):
-        self.revenue += load.total_amount
+        self.revenue += load.revenue
         self.miles += load.loaded_miles or 0
         self.empty_miles += load.empty_miles or 0
         self.loads += 1
@@ -106,7 +106,7 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
     trend = []
     for month_start in starts:
         revenue = sum(
-            load.total_amount
+            load.revenue
             for load in loads
             if (earned_on(load).year, earned_on(load).month) == (month_start.year, month_start.month)
         )

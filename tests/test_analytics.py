@@ -165,3 +165,40 @@ def test_revenue_includes_extra_charges():
 
     assert current.revenue == 1200
     assert receivables([load], 30, TODAY)["total"] == 1200
+
+
+def paid(day: date, rate: float, amount_paid: float | None, broker: str = "Acme Logistics"):
+    load = delivered(day, rate=rate, miles=1000, broker=broker)
+    return load.model_copy(update={"status": LoadStatus.PAID, "paid_at": day, "amount_paid": amount_paid})
+
+
+def test_paid_loads_count_what_the_broker_paid():
+    loads = [
+        paid(date(2026, 10, 2), rate=2000, amount_paid=1940),  # 3% quick-pay fee
+        paid(date(2026, 10, 9), rate=1000, amount_paid=1000, broker="Blue Freight"),
+        delivered(date(2026, 10, 15), rate=500, broker="Blue Freight"),  # not paid yet: counts what was billed
+    ]
+
+    a = build_analytics(loads, "month", TODAY)
+
+    assert a["current"].revenue == 3440
+    assert a["current"].rpm == pytest.approx(3440 / 2500)
+    assert a["trend"][-1]["revenue"] == 3440
+    assert [(b["name"], b["totals"].revenue) for b in a["brokers"]] == [
+        ("Acme Logistics", 1940),
+        ("Blue Freight", 1500),
+    ]
+
+
+def test_paid_load_without_an_amount_counts_what_was_billed():
+    # Marked paid through the API without an amount: the billed total is the best figure there is
+    load = paid(date(2026, 10, 2), rate=2000, amount_paid=None)
+
+    assert build_analytics([load], "month", TODAY)["current"].revenue == 2000
+
+
+def test_revenue_follows_the_status_not_a_stray_amount():
+    # A payment undone in the UI clears amount_paid, but the API can leave one on an unpaid load
+    load = delivered(date(2026, 10, 2), rate=2000).model_copy(update={"amount_paid": 1500})
+
+    assert load.revenue == 2000

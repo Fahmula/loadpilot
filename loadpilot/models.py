@@ -65,6 +65,14 @@ class Load(BaseModel):
         return self.rate_amount + sum(charge.amount for charge in self.charges)
 
     @property
+    def revenue(self) -> float:
+        """What the load brought in: the amount received once it's paid, after any quick-pay fee or short pay;
+        the billed total until then."""
+        if self.status == LoadStatus.PAID and self.amount_paid is not None:
+            return self.amount_paid
+        return self.total_amount
+
+    @property
     def route_stops(self) -> list[tuple[StopKind, str, date | None]]:
         """Every stop in route order, first pickup to final delivery, as (kind, location, date)."""
         return [
