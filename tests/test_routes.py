@@ -182,6 +182,44 @@ def test_mark_delivered_sets_actual_delivery_date(client, db_path):
     assert updated["actual_delivery_date"] == date.today().isoformat()
 
 
+@pytest.mark.parametrize("status", [LoadStatus.DELIVERED, LoadStatus.INVOICED, LoadStatus.PAID])
+def test_mark_delivered_from_a_stale_page_changes_nothing(client, db_path, status):
+    load = seed(db_path, status=status, actual_delivery_date=date(2026, 10, 3), invoice_number="INV-1001")
+
+    response = client.post(f"/update-load-status/{load.id}/Delivered")
+
+    assert response.status_code == 409
+    assert response.headers["HX-Refresh"] == "true"  # the stale page reloads to show where the load stands
+    unchanged = client.get(f"/api/loads/{load.id}").json()
+    assert unchanged["status"] == status
+    assert unchanged["actual_delivery_date"] == "2026-10-03"
+
+
+def test_status_route_only_marks_delivered(client, db_path):
+    load = seed(db_path, status=LoadStatus.DELIVERED)
+
+    # Invoicing goes through the BOL upload, which also numbers the invoice and builds its PDF
+    assert client.post(f"/update-load-status/{load.id}/Invoiced").status_code == 422
+    assert client.get(f"/api/loads/{load.id}").json()["status"] == "Delivered"
+    assert client.post("/update-load-status/999/Delivered").status_code == 404
+
+
+@pytest.mark.parametrize("status", [LoadStatus.ACTIVE, LoadStatus.INVOICED, LoadStatus.PAID])
+def test_only_a_delivered_load_can_be_invoiced(client, db_path, status):
+    paid_on = date(2026, 10, 20) if status == LoadStatus.PAID else None
+    load = seed(db_path, status=status, invoice_number="INV-1001", paid_at=paid_on, amount_paid=2500.0)
+
+    response = client.post(
+        f"/generate-invoice/{load.id}", files={"bol_file": ("bol.pdf", blank_pdf(), "application/pdf")}
+    )
+
+    assert response.status_code == 409
+    unchanged = client.get(f"/api/loads/{load.id}").json()
+    assert unchanged["status"] == status
+    assert unchanged["bol_pdf_path"] is None
+    assert unchanged["paid_at"] == (paid_on.isoformat() if paid_on else None)
+
+
 def test_api_update_rejects_unknown_fields(client, db_path):
     load = seed(db_path)
 

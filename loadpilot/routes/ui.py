@@ -253,20 +253,16 @@ async def attach_rate_con(request: Request, load_id: int, rate_con: UploadFile =
 
 @router.post("/update-load-status/{load_id}/{new_status}")
 async def update_load_status(request: Request, load_id: int, new_status: str):
+    """Marks a load delivered today. Invoicing and payment have their own routes: each needs more than a status."""
+    if new_status != LoadStatus.DELIVERED:
+        raise HTTPException(status_code=422, detail="Only Delivered can be set here")
     db = request.app.state.db
-    status_map = {
-        "Delivered": LoadStatus.DELIVERED,
-        "Invoiced": LoadStatus.INVOICED,
-    }
-
-    if new_status in status_map:
-        update_data = {"status": status_map[new_status].value}
-
-        if status_map[new_status] == LoadStatus.DELIVERED:
-            update_data["actual_delivery_date"] = date.today().isoformat()
-
-        await db.update_load(load_id, update_data)
-
+    load = await get_load_or_404(db, load_id)
+    # A page left open from before the load moved on mustn't move it back or reset its delivery day.
+    # htmx reloads on HX-Refresh whatever the status code, so the stale page then shows where the load stands.
+    if load.status not in (LoadStatus.DRAFT, LoadStatus.ACTIVE):
+        return Response(status_code=409, headers={"HX-Refresh": "true"})
+    await db.update_load(load_id, {"status": LoadStatus.DELIVERED, "actual_delivery_date": date.today()})
     return Response(headers={"HX-Refresh": "true"})
 
 
@@ -299,6 +295,9 @@ async def write_invoice(load: Load, settings: dict) -> str:
 async def generate_invoice(request: Request, load_id: int, bol_file: UploadFile = File(...)):
     db = request.app.state.db
     load = await get_load_or_404(db, load_id)
+    # A resubmitted form would otherwise re-invoice the load, putting a paid one back to Invoiced
+    if load.status != LoadStatus.DELIVERED:
+        raise HTTPException(status_code=409, detail="Only a delivered load can be invoiced")
     settings = await db.get_all_settings()
 
     # Keep only the base name so a crafted filename can't escape the BOL directory
