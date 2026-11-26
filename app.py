@@ -6,10 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 
 from loadpilot import __version__
-from loadpilot.auth import SESSION_MAX_AGE, AuthMiddleware, LoginThrottle, load_secret_key
+from loadpilot.auth import SESSION_MAX_AGE, AuthMiddleware, HttpsSessionMiddleware, LoginThrottle, load_secret_key
 from loadpilot.config import BOL_DIR, DB_PATH, INVOICE_DIR, LOG_DIR, RATECON_DIR, ensure_data_dirs
 from loadpilot.database import DatabaseManager
 from loadpilot.routes import api, auth, settings, ui
@@ -69,7 +68,7 @@ app = FastAPI(title="LoadPilot API", version=__version__, lifespan=lifespan)
 # Middleware runs outermost-last: the session is loaded before AuthMiddleware checks it
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
-    SessionMiddleware,
+    HttpsSessionMiddleware,
     secret_key=load_secret_key(),
     session_cookie="loadpilot_session",
     max_age=SESSION_MAX_AGE,

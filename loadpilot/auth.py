@@ -11,6 +11,8 @@ from urllib.parse import quote
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from loadpilot.config import DATA_DIR
 from loadpilot.models import User
@@ -99,6 +101,51 @@ async def get_current_user(request: Request) -> User | None:
     return None
 
 
+class HttpsSessionMiddleware:
+    """Starlette's session cookie, marked Secure whenever the request came over HTTPS.
+
+    A Secure cookie never travels over plain HTTP, e.g. when a link or a typed address starts with http://
+    on public Wi-Fi. Deciding per request keeps plain-HTTP access on the home network working, where a
+    Secure cookie would never come back. Behind a proxy, HTTPS shows through X-Forwarded-Proto once
+    FORWARDED_ALLOW_IPS trusts the proxy (see warn_if_proxy_untrusted).
+    """
+
+    def __init__(self, app: ASGIApp, **options):
+        self.plain = SessionMiddleware(app, **options)
+        self.secure = SessionMiddleware(app, **options, https_only=True)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        session = self.secure if scope.get("scheme") in ("https", "wss") else self.plain
+        await session(scope, receive, send)
+
+
+_untrusted_proxy_logged = False
+
+
+def warn_if_proxy_untrusted(request: Request):
+    """Logs once when a reverse proxy's X-Forwarded-For header is being ignored.
+
+    uvicorn only applies the header from addresses in FORWARDED_ALLOW_IPS (localhost unless set). Behind any
+    other proxy every visitor shares the proxy's address, so one person's failed logins lock out everyone,
+    and HTTPS visits look like plain HTTP.
+    """
+    global _untrusted_proxy_logged
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if _untrusted_proxy_logged or not forwarded_for or not request.client:
+        return
+    proxy = request.client.host
+    # Once the proxy is trusted, uvicorn has already replaced the client address with one from the header
+    if proxy in (address.strip() for address in forwarded_for.split(",")):
+        return
+    _untrusted_proxy_logged = True
+    logger.warning(
+        f"Requests are coming through a proxy at {proxy} that LoadPilot doesn't trust, so every visitor looks "
+        f"like {proxy}: failed logins from anyone count toward the same limit, and HTTPS visits look like HTTP. "
+        f"If {proxy} is your reverse proxy, set FORWARDED_ALLOW_IPS on the container to its address or network "
+        "(or * if nothing but the proxy can reach LoadPilot)."
+    )
+
+
 def safe_next_path(next_path: str | None) -> str:
     """Only allow redirects back into this app, never to another site."""
     if next_path and next_path.startswith("/") and not next_path.startswith("//") and "\\" not in next_path:
@@ -141,6 +188,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Requires a logged-in session for everything except the public paths above."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        warn_if_proxy_untrusted(request)
         path = request.url.path
         if is_public_path(path):
             return await call_next(request)
