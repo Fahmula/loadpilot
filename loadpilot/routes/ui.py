@@ -473,8 +473,8 @@ async def mark_unpaid(request: Request, load_id: int):
 
 @router.get("/analytics", response_class=HTMLResponse)
 async def analytics_page(request: Request, period: str = "month"):
-    loads = await request.app.state.db.get_earned_loads()
-    analytics = build_analytics(loads, period)
+    db = request.app.state.db
+    analytics = build_analytics(await db.get_earned_loads(), period, expenses=await db.get_expenses())
     return templates.TemplateResponse(request=request, name="analytics.html", context={"analytics": analytics})
 
 

@@ -3,10 +3,10 @@
 
 {% block title %}Analytics · LoadPilot{% endblock %}
 
-{% macro change_badge(change) -%}
+{% macro change_badge(change, lower_is_better=False) -%}
 {% set rounded = change | round | int if change is not none else none %}
 {% if rounded %}
-<div class="mt-2 flex items-center gap-1 text-sm font-semibold {{ 'text-success' if rounded > 0 else 'text-error' }}">
+<div class="mt-2 flex items-center gap-1 text-sm font-semibold {{ 'text-success' if (rounded > 0) != lower_is_better else 'text-error' }}">
     {{ icon("trending-up" if rounded > 0 else "trending-down", "size-4") }}
     {{ "+" if rounded > 0 }}{{ rounded }}%
 </div>
@@ -17,14 +17,14 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro stat_card(label, value, icon_name, tone, change, note=None) -%}
+{% macro stat_card(label, value, icon_name, tone, change, note=None, lower_is_better=False) -%}
 <div class="card-soft p-4">
     <div class="flex items-center gap-2.5">
         {{ icon_tile(icon_name, tone, "size-9") }}
         <span class="truncate text-[13px] font-medium text-base-content/70 sm:text-sm">{{ label }}</span>
     </div>
     <div class="mt-3 truncate text-2xl font-extrabold tracking-tight sm:text-3xl">{{ value }}</div>
-    {% if note %}<div class="mt-2 text-sm text-base-content/50">{{ note }}</div>{% else %}{{ change_badge(change) }}{% endif %}
+    {% if note %}<div class="mt-2 text-sm text-base-content/50">{{ note }}</div>{% else %}{{ change_badge(change, lower_is_better) }}{% endif %}
 </div>
 {%- endmacro %}
 
@@ -51,7 +51,43 @@
         {{ stat_card("All-in RPM", "$%.2f" | format(a.current.all_in_rpm), "gauge", "primary", a.changes.all_in_rpm) }}
         {{ stat_card("Empty Miles", a.current.empty_miles | miles, "map-pin", "primary", None, "%.0f%% deadhead" | format(a.current.deadhead_pct)) }}
         {{ stat_card("Loads", a.current.loads, "truck", "primary", a.changes.loads) }}
+        {% if a.tracks_expenses %}
+        {{ stat_card("Expenses", a.current.expenses | money, "wallet", "primary", a.changes.expenses, lower_is_better=True) }}
+        {{ stat_card("Profit", a.current.profit | money, "piggy-bank", "primary", a.changes.profit) }}
+        {% endif %}
     </div>
+
+    <!-- Profit: what's left after expenses -->
+    <section class="card-soft p-5">
+        <div class="mb-3 flex items-center justify-between gap-3">
+            <h2 class="section-title">Where the Money Went</h2>
+            <a href="/expenses" class="btn btn-ghost btn-sm -mr-2 rounded-lg text-primary">Expenses {{ icon("chevron-right", "size-4") }}</a>
+        </div>
+        {% if a.tracks_expenses %}
+        <dl class="grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-xl bg-base-200/60 p-3"><dt class="text-xs text-base-content/60">Revenue</dt><dd class="font-bold">{{ a.current.revenue | money(False) }}</dd></div>
+            <div class="rounded-xl bg-base-200/60 p-3"><dt class="text-xs text-base-content/60">Expenses</dt><dd class="font-bold">{{ a.current.expenses | money(False) }}</dd></div>
+            <div class="rounded-xl bg-base-200/60 p-3"><dt class="text-xs text-base-content/60">Profit / mile</dt><dd class="font-bold {{ 'text-error' if a.current.profit_per_mile < 0 else 'text-primary' }}">{{ "-" if a.current.profit_per_mile < 0 }}${{ "%.2f" | format(a.current.profit_per_mile | abs) }}</dd></div>
+        </dl>
+        {% if a.expense_categories %}
+        <ul class="mt-4 space-y-2.5">
+            {% for item in a.expense_categories %}
+            <li>
+                <div class="flex items-baseline justify-between gap-3 text-sm">
+                    <span class="font-medium">{{ item.category.value }}</span>
+                    <span><span class="font-semibold">{{ item.amount | money(False) }}</span> <span class="text-base-content/50">{{ item.percent }}%</span></span>
+                </div>
+                <div class="mt-1 h-1.5 rounded-full bg-base-200"><div class="h-1.5 rounded-full bg-primary/70" style="width: {{ item.percent }}%"></div></div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-3 text-center text-sm text-base-content/50">No expenses {{ a.period_label | lower }}.</p>
+        {% endif %}
+        {% else %}
+        <p class="text-sm text-base-content/60">Log fuel, repairs, insurance and your truck payment on the <a href="/expenses" class="link">Expenses</a> page to see your profit and profit per mile, not just revenue.</p>
+        {% endif %}
+    </section>
 
     <!-- Revenue trend -->
     <section class="card-soft p-5">
@@ -120,6 +156,6 @@
         {% endif %}
     </section>
 
-    <p class="px-2 text-center text-xs text-base-content/50">Only delivered, invoiced and paid loads count, on the day they were delivered. Paid loads count what the broker actually paid.</p>
+    <p class="px-2 text-center text-xs text-base-content/50">Only delivered, invoiced and paid loads count, on the day they were delivered. Paid loads count what the broker actually paid. Expenses count on the day they were paid; profit per mile counts empty miles too.</p>
 </div>
 {% endblock %}
