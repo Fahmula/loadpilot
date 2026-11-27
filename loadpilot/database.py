@@ -111,14 +111,25 @@ class DatabaseManager:
             logger.info("Database initialized successfully.")
 
     async def _migrate(self, db: aiosqlite.Connection):
-        """Applies each migration newer than the database's PRAGMA user_version, in order."""
+        """Applies each migration newer than the database's PRAGMA user_version, in order.
+
+        A migration and its version bump commit together or not at all (SQLite's ALTER TABLE is transactional):
+        if one fails or the app stops part-way, the next start retries it from a clean slate, instead of
+        failing on a column the half-done attempt already added.
+        """
         async with db.execute("PRAGMA user_version") as cursor:
             current_version = (await cursor.fetchone())[0]
 
         for version, statements in enumerate(MIGRATIONS[current_version:], start=current_version + 1):
-            for statement in statements:
-                await db.execute(statement)
-            await db.execute(f"PRAGMA user_version = {version}")
+            await db.execute("BEGIN")
+            try:
+                for statement in statements:
+                    await db.execute(statement)
+                await db.execute(f"PRAGMA user_version = {version}")
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
             logger.info(f"Applied database migration {version}.")
 
     # -----------------------------------------
