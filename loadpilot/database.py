@@ -62,6 +62,11 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE loads ADD COLUMN stops TEXT NOT NULL DEFAULT '[]'",
     ],
+    # 9: when and to whom the invoice was last emailed
+    [
+        "ALTER TABLE loads ADD COLUMN invoice_emailed_at TEXT",
+        "ALTER TABLE loads ADD COLUMN invoice_emailed_to TEXT",
+    ],
 ]
 
 
@@ -217,8 +222,8 @@ class DatabaseManager:
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, empty_miles, deadhead_origin, status,
                     notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at, paid_at,
-                    amount_paid, charges, stops
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    amount_paid, charges, stops, invoice_emailed_at, invoice_emailed_to
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -244,6 +249,8 @@ class DatabaseManager:
                     load.amount_paid,
                     json_list("charges", load.charges),
                     json_list("stops", load.stops),
+                    load.invoice_emailed_at.isoformat() if load.invoice_emailed_at else None,
+                    load.invoice_emailed_to,
                 ),
             )
             await db.commit()
@@ -353,6 +360,8 @@ class DatabaseManager:
             amount_paid=row["amount_paid"],
             charges=json.loads(row["charges"]),
             stops=json.loads(row["stops"]),
+            invoice_emailed_at=datetime.fromisoformat(row["invoice_emailed_at"]) if row["invoice_emailed_at"] else None,
+            invoice_emailed_to=row["invoice_emailed_to"],
         )
 
     async def get_earned_loads(self) -> list[Load]:
