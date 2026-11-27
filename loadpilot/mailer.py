@@ -96,8 +96,8 @@ def send(config: MailConfig, message: EmailMessage):
         raise
     except smtplib.SMTPAuthenticationError as e:
         raise MailError(
-            "The email server rejected the username or password. Gmail and Outlook need an app password here, "
-            "not your normal one."
+            "The email server rejected the username or password. Gmail needs an app password here, not your "
+            "normal one, and many other providers do too."
         ) from e
     except smtplib.SMTPRecipientsRefused as e:
         raise MailError(f"The email server refused to send to {', '.join(e.recipients)}.") from e
