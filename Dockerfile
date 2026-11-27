@@ -36,10 +36,16 @@ COPY --from=css /src/static/css/app.css /app/static/css/app.css
 
 RUN chmod +x /app/entry.sh
 
-# Version is passed in by the release workflow from the git tag
+# The app runs as a regular user, who can't write __pycache__ into /app; compile it now instead
+RUN python -m compileall -q /app/app.py /app/loadpilot
+
+# Version is passed in by the release workflow from the git tag.
+# PUID/PGID: the user LoadPilot runs as and the owner of /config (entry.sh drops root to it).
 ARG LOADPILOT_VERSION=dev
 ENV LOADPILOT_VERSION=${LOADPILOT_VERSION} \
     LOADPILOT_DATA_DIR=/config \
+    PUID=1000 \
+    PGID=1000 \
     PYTHONUNBUFFERED=1
 
 EXPOSE 8000

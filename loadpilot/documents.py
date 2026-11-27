@@ -16,7 +16,8 @@ from pi_heif import register_heif_opener
 from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
 
-from loadpilot.config import RATECON_DIR
+from loadpilot.config import BOL_DIR, INVOICE_DIR, RATECON_DIR
+from loadpilot.models import Load
 
 logger = logging.getLogger("loadpilot.documents")
 
@@ -141,6 +142,40 @@ def save_for_load(pages: list[Page], load_id: int) -> str | None:
     final = f"ratecon_{load_id}_{uuid.uuid4().hex[:6]}{extension}"
     (RATECON_DIR / final).write_bytes(content)
     return f"static/ratecons/{final}"
+
+
+DOCUMENT_FOLDERS = {"static/ratecons/": RATECON_DIR, "static/bols/": BOL_DIR, "static/invoices/": INVOICE_DIR}
+
+
+def remove_document(web_path: str | None):
+    """Deletes a stored rate con, BOL or invoice, given the web path saved on its load.
+
+    Only a bare file name inside the folder its path names is ever removed, whatever the path says.
+    """
+    for prefix, folder in DOCUMENT_FOLDERS.items():
+        if web_path and web_path.startswith(prefix):
+            (folder / Path(web_path).name).unlink(missing_ok=True)
+            logger.info(f"Deleted {web_path}.")
+
+
+def remove_load_documents(load: Load):
+    """Deletes a deleted load's rate con, BOL and invoice: nothing links to them any more, and they hold
+    customer and banking details."""
+    for web_path in (load.rate_con_pdf_path, load.bol_pdf_path, load.invoice_pdf_path):
+        remove_document(web_path)
+
+
+def orphaned_documents(linked: set[str]) -> list[Path]:
+    """Stored documents no load links to, e.g. left behind by loads deleted before their files went with them.
+
+    linked holds every load's document web paths. Pending rate cons are left alone; they clean themselves up.
+    """
+    return sorted(
+        path
+        for prefix, folder in DOCUMENT_FOLDERS.items()
+        for path in folder.iterdir()
+        if path.is_file() and not PENDING_NAME.match(path.name) and prefix + path.name not in linked
+    )
 
 
 def clean_pending(now: float | None = None):

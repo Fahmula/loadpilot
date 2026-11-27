@@ -105,6 +105,34 @@ async def test_migration_moves_invoice_out_of_rate_con_column(tmp_path):
     assert load.rate_con_pdf_path is None
 
 
+async def schema(manager: DatabaseManager) -> tuple[int, set[str]]:
+    """The database's user_version and the columns of its loads table."""
+    async with aiosqlite.connect(manager.db_path) as conn:
+        async with conn.execute("PRAGMA user_version") as cursor:
+            version = (await cursor.fetchone())[0]
+        async with conn.execute("PRAGMA table_info(loads)") as cursor:
+            columns = {row[1] for row in await cursor.fetchall()}
+    return version, columns
+
+
+async def test_a_failed_migration_leaves_nothing_behind(db, monkeypatch):
+    # The first statement works and the second fails, like an upgrade stopped half-way
+    half_done = ["ALTER TABLE loads ADD COLUMN trailer_number TEXT", "ALTER TABLE no_such_table ADD COLUMN x TEXT"]
+    monkeypatch.setattr(database, "MIGRATIONS", [*MIGRATIONS, half_done])
+
+    with pytest.raises(aiosqlite.OperationalError):
+        await db.init_db()
+
+    version, columns = await schema(db)
+    assert version == len(MIGRATIONS)
+    assert "trailer_number" not in columns
+
+    # So once the migration is fixed, the next start applies it instead of failing on a duplicate column
+    monkeypatch.setattr(database, "MIGRATIONS", [*MIGRATIONS, half_done[:1]])
+    await db.init_db()
+    assert await schema(db) == (len(MIGRATIONS) + 1, columns | {"trailer_number"})
+
+
 async def legacy_database(tmp_path, monkeypatch, version: int) -> DatabaseManager:
     """A database as it was at schema version N, before the later migrations existed."""
     manager = DatabaseManager(db_path=str(tmp_path / "legacy.db"))

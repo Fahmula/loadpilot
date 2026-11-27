@@ -76,3 +76,25 @@ jobs:
           done
           docker logs loadpilot
           exit 1
+      - name: Run as a regular user, taking over a /config that older images left root-owned
+        run: |
+          trap 'docker logs upgraded 2>&1 | tail -30' ERR
+          # Older images ran as root: fill a volume the way they left it (database, logs, secret key, a BOL)
+          docker volume create old-config
+          docker run --rm -v old-config:/config --entrypoint python loadpilot:ci -c "import asyncio, app; from loadpilot.config import BOL_DIR, DB_PATH; from loadpilot.database import DatabaseManager; asyncio.run(DatabaseManager(str(DB_PATH)).init_db()); (BOL_DIR / 'bol_1_abc123.pdf').write_bytes(b'%PDF-1.4')"
+          docker run --rm -v old-config:/config --entrypoint find loadpilot:ci /config -user 0 | grep -q loadpilot.db
+
+          docker run -d --name upgraded -p 8001:8000 -v old-config:/config loadpilot:ci
+          for i in $(seq 1 30); do curl -fsS http://localhost:8001/health && break; sleep 1; done
+          curl -fsS http://localhost:8001/health
+
+          # The app runs as 1000:1000, everything in /config is now its own, and it can still save
+          test "$(docker exec upgraded grep '^Uid:' /proc/1/status | cut -f2)" = 1000
+          test "$(docker exec upgraded grep '^Gid:' /proc/1/status | cut -f2)" = 1000
+          test -z "$(docker exec upgraded find /config ! -user 1000)"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -d 'username=driver&password=correct-horse&confirm_password=correct-horse' http://localhost:8001/setup)" = 303
+
+          # Invoices still render as that user, without font cache errors
+          output=$(docker exec -u 1000:1000 -e HOME=/tmp upgraded python -c "from weasyprint import HTML; assert HTML(string='<h1>ok</h1>').write_pdf().startswith(b'%PDF')" 2>&1)
+          echo "$output"
+          if echo "$output" | grep -qi "error"; then exit 1; fi
