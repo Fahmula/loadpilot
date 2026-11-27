@@ -800,6 +800,58 @@ def test_delete_load_redirects_to_loads(client, db_path):
     assert client.get(f"/api/loads/{load.id}").status_code == 404
 
 
+def load_with_documents(db_path, name: str):
+    """A load whose rate con, BOL and invoice files exist on disk."""
+    files = {
+        "rate_con_pdf_path": RATECON_DIR / f"ratecon_{name}.pdf",
+        "bol_pdf_path": BOL_DIR / f"bol_{name}.pdf",
+        "invoice_pdf_path": INVOICE_DIR / f"invoice_{name}.pdf",
+    }
+    for path in files.values():
+        path.write_bytes(blank_pdf())
+    web_paths = {field: f"static/{path.parent.name}/{path.name}" for field, path in files.items()}
+    return seed(db_path, **web_paths), list(files.values())
+
+
+def test_deleting_a_load_deletes_its_documents(client, db_path):
+    deleted, deleted_files = load_with_documents(db_path, "gone")
+    kept, kept_files = load_with_documents(db_path, "kept")
+
+    client.post(f"/delete-load-web/{deleted.id}")
+
+    assert not any(path.exists() for path in deleted_files)
+    assert all(path.exists() for path in kept_files)  # another load's documents stay
+    assert "rate con, BOL and invoice files" in client.get(f"/loads/{kept.id}").text  # the confirm says so
+
+
+def test_deleting_a_load_through_the_api_deletes_its_documents(client, db_path):
+    load, files = load_with_documents(db_path, "api")
+
+    assert client.delete(f"/api/loads/{load.id}").status_code == 200
+    assert not any(path.exists() for path in files)
+
+
+def test_document_paths_never_reach_outside_their_folder(client, db_path):
+    outside = BOL_DIR.parent / "loadpilot-keep.txt"
+    outside.write_text("not a document")
+    load = seed(db_path, bol_pdf_path="static/bols/../loadpilot-keep.txt", notes="crafted through the API")
+
+    client.post(f"/delete-load-web/{load.id}")
+
+    assert outside.exists()
+    outside.unlink()
+
+
+def test_replacing_a_rate_con_deletes_the_old_one(client, db_path):
+    load, (old_rate_con, *_) = load_with_documents(db_path, "replaced")
+
+    client.post(f"/loads/{load.id}/rate-con", files={"rate_con": ("new.pdf", blank_pdf(), "application/pdf")})
+
+    new_path = client.get(f"/api/loads/{load.id}").json()["rate_con_pdf_path"]
+    assert not old_rate_con.exists()
+    assert (RATECON_DIR / new_path.removeprefix("static/ratecons/")).exists()
+
+
 def test_dashboard_counts_and_recent_loads(client, db_path):
     today = date.today()
     seed(db_path, load_reference="RUN-1", status=LoadStatus.ACTIVE)

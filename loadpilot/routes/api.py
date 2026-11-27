@@ -1,9 +1,11 @@
+import asyncio
 from datetime import date
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from loadpilot.documents import remove_load_documents
 from loadpilot.models import Load, LoadStatus, LoadUpdate
 
 router = APIRouter(prefix="/api/loads", tags=["Loads"])
@@ -54,9 +56,10 @@ async def update_load(load_id: int, load_update: LoadUpdate, request: Request):
 @router.delete("/{load_id}")
 async def delete_load(load_id: int, request: Request):
     db = request.app.state.db
-    success = await db.delete_load(load_id)
-    if not success:
+    load = await db.get_load(load_id)
+    if not load or not await db.delete_load(load_id):
         raise HTTPException(status_code=404, detail="Load not found")
+    await asyncio.to_thread(remove_load_documents, load)
     return {"message": "Load deleted successfully"}
 
 

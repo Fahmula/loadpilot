@@ -17,6 +17,8 @@ from loadpilot.documents import (
     UnreadableDocument,
     as_pdf,
     claim_pending,
+    remove_document,
+    remove_load_documents,
     save_for_load,
     save_pending,
     with_document,
@@ -248,12 +250,14 @@ async def edit_load(
 @router.post("/loads/{load_id}/rate-con")
 async def attach_rate_con(request: Request, load_id: int, rate_con: UploadFile = File(...)):
     db = request.app.state.db
-    await get_load_or_404(db, load_id)
+    load = await get_load_or_404(db, load_id)
     page = (await rate_con.read(), rate_con.content_type or "application/octet-stream", rate_con.filename)
     path = await asyncio.to_thread(save_for_load, [page], load_id)
     if not path:
         raise HTTPException(status_code=400, detail="Upload a PDF or a photo of the rate con")
     await db.update_load(load_id, {"rate_con_pdf_path": path})
+    # A replaced rate con is no longer linked from anywhere
+    await asyncio.to_thread(remove_document, load.rate_con_pdf_path)
     return RedirectResponse(url=f"/loads/{load_id}", status_code=303)
 
 
@@ -407,5 +411,7 @@ async def analytics_page(request: Request, period: str = "month"):
 @router.post("/delete-load-web/{load_id}")
 async def delete_load_web(request: Request, load_id: int):
     db = request.app.state.db
-    await db.delete_load(load_id)
+    load = await db.get_load(load_id)
+    if load and await db.delete_load(load_id):
+        await asyncio.to_thread(remove_load_documents, load)
     return Response(headers={"HX-Redirect": "/loads"})
