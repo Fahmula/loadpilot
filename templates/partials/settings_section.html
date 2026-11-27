@@ -4,6 +4,7 @@
     "company": ("Company Information", "building-2", "primary"),
     "ai": ("AI Configuration", "cpu", "primary"),
     "bank": ("Payments & Banking", "landmark", "primary"),
+    "email": ("Invoice Email", "mail", "primary"),
 }[section] %}
 {% set target = "#settings-" ~ section %}
 
@@ -102,6 +103,21 @@
                 <label class="floating-label"><span>Routing #</span>
                     <input type="text" inputmode="numeric" name="routing_number" class="input w-full" placeholder="Routing #" value="{{ settings.routing_number or '' }}" autocomplete="off"></label>
             </div>
+        {% elif section == "email" %}
+            <div class="grid grid-cols-[1fr_6rem] gap-3">
+                <label class="floating-label"><span>Email server (SMTP)</span>
+                    <input type="text" name="smtp_host" class="input w-full" placeholder="Email server, e.g. smtp.gmail.com" value="{{ settings.smtp_host or '' }}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+                <label class="floating-label"><span>Port</span>
+                    <input type="number" name="smtp_port" class="input w-full" placeholder="Port" value="{{ settings.smtp_port or 587 }}" min="1" max="65535"></label>
+            </div>
+            <label class="floating-label"><span>Username</span>
+                <input type="text" name="smtp_username" class="input w-full" placeholder="Username, usually your email address" value="{{ settings.smtp_username or '' }}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <label class="floating-label"><span>Password</span>
+                <input type="password" name="smtp_password" class="input w-full" autocomplete="new-password"
+                       placeholder="{% if settings.smtp_password %}Saved. Type a new one to replace it{% else %}Password or app password{% endif %}"></label>
+            <label class="floating-label"><span>From address</span>
+                <input type="email" name="smtp_from" class="input w-full" placeholder="From address (if not the username)" value="{{ settings.smtp_from or '' }}" autocomplete="off"></label>
+            <p class="-mt-1 text-xs text-base-content/60">Gmail: smtp.gmail.com, port 587, and an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" class="link">app password</a>. Outlook: smtp.office365.com, port 587. The password is stored on your server and never shown again.</p>
         {% endif %}
         <div class="flex gap-2 pt-1">
             <button type="button" class="btn btn-ghost flex-1 rounded-xl" hx-get="/settings/section/{{ section }}" hx-target="{{ target }}" hx-swap="outerHTML">Cancel</button>
@@ -167,6 +183,19 @@
                        hx-post="/settings/toggle/show_bank_on_invoice" hx-trigger="change" hx-swap="none">
                 <span class="text-sm font-medium">Include direct deposit on invoices</span>
             </label>
+
+        {% elif section == "email" %}
+            {% if mail %}
+            <div class="text-xs text-base-content/60">Sends from</div>
+            <div class="truncate font-semibold">{{ mail.sender }}</div>
+            <div class="mt-1 truncate font-mono text-sm text-base-content/70">{{ mail.host }}:{{ mail.port }}</div>
+            <button class="btn btn-outline btn-sm mt-4 w-full rounded-xl border-base-300" hx-post="/settings/email/test" hx-target="#email-test-result" hx-disabled-elt="this">
+                {{ icon("mail", "size-4 text-primary") }} Send Test Email
+            </button>
+            <div id="email-test-result"></div>
+            {% else %}
+            <p class="text-sm text-base-content/60">Connect your email account to send invoices to brokers straight from a load.</p>
+            {% endif %}
         {% endif %}
     {% endif %}
 </section>

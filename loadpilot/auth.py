@@ -146,6 +146,29 @@ def warn_if_proxy_untrusted(request: Request):
     )
 
 
+# -----------------------------------------
+# API TOKEN (for other apps, e.g. a bank feed recording payments)
+# -----------------------------------------
+def new_api_token() -> str:
+    # The lp_ prefix makes a leaked token recognisable, e.g. to secret scanners
+    return "lp_" + secrets.token_urlsafe(32)
+
+
+def hash_api_token(token: str) -> str:
+    """Only this is stored, so a copy of the database can't call the API. A plain hash suffices for 256
+    random bits; slow hashing is for guessable passwords."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def has_valid_api_token(request: Request) -> bool:
+    """Whether the request carries the API token from Settings, as `Authorization: Bearer <token>`."""
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return False
+    stored = await request.app.state.db.get_setting("api_token_hash")
+    return bool(stored) and hmac.compare_digest(stored, hash_api_token(token.strip()))
+
+
 def safe_next_path(next_path: str | None) -> str:
     """Only allow redirects back into this app, never to another site."""
     if next_path and next_path.startswith("/") and not next_path.startswith("//") and "\\" not in next_path:
@@ -196,6 +219,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user = await get_current_user(request)
         if user:
             request.state.user = user
+            return await call_next(request)
+        # Other apps sign in with the API token instead; it opens the API only, never the pages or Settings
+        if path.startswith("/api/") and await has_valid_api_token(request):
             return await call_next(request)
 
         target = "/login" if await request.app.state.db.has_users() else "/setup"

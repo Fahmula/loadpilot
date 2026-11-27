@@ -1,16 +1,19 @@
 import asyncio
 import re
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from loadpilot.ai import PROVIDERS, AIError, build_prompt, list_models, load_ai_config, suggest_model
-from loadpilot.templating import templates
+from loadpilot.auth import hash_api_token, new_api_token
+from loadpilot.mailer import MailError, build_message, mail_config, send
+from loadpilot.templating import alert_response, templates
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
-Section = Literal["company", "ai", "bank"]
+Section = Literal["company", "ai", "bank", "email"]
 
 # Which settings keys the simple cards edit (the AI card has its own handler)
 SECTION_FIELDS = {
@@ -36,9 +39,11 @@ ID_PREFIXES = {
 
 async def section_context(request: Request, section: str, editing: bool, provider: str | None = None) -> dict:
     db = request.app.state.db
+    settings = await db.get_all_settings()
     return {
         "section": section,
-        "settings": await db.get_all_settings(),
+        "settings": settings,
+        "mail": mail_config(settings),
         "editing": editing,
         "ai": await load_ai_config(db, provider),
         "providers": PROVIDERS,
@@ -54,7 +59,44 @@ async def render_section(request: Request, section: str, editing: bool, provider
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request):
     context = await section_context(request, "company", editing=False)
+    context["token"] = api_token_on_file(context["settings"])
+    context["export_years"] = await request.app.state.db.get_load_years()
     return templates.TemplateResponse(request=request, name="settings.html", context=context)
+
+
+# -----------------------------------------
+# API TOKEN
+# -----------------------------------------
+def api_token_on_file(settings: dict) -> dict | None:
+    """What the API Access card shows about the current token: never the token, which isn't stored."""
+    if not settings.get("api_token_hash"):
+        return None
+    created = settings.get("api_token_created")
+    return {"hint": settings.get("api_token_hint", ""), "created": date.fromisoformat(created) if created else None}
+
+
+def render_api_token(request: Request, token: dict | None, new_token: str | None = None):
+    context = {"token": token, "new_token": new_token}
+    return templates.TemplateResponse(request=request, name="partials/api_token.html", context=context)
+
+
+@router.post("/api-token", response_class=HTMLResponse)
+async def create_api_token(request: Request):
+    """Creates the API token, replacing any earlier one, and shows it this once."""
+    db = request.app.state.db
+    token = new_api_token()
+    await db.save_setting("api_token_hash", hash_api_token(token))
+    await db.save_setting("api_token_hint", "…" + token[-4:])
+    await db.save_setting("api_token_created", date.today().isoformat())
+    return render_api_token(request, api_token_on_file(await db.get_all_settings()), new_token=token)
+
+
+@router.post("/api-token/revoke", response_class=HTMLResponse)
+async def revoke_api_token(request: Request):
+    db = request.app.state.db
+    for key in ("api_token_hash", "api_token_hint", "api_token_created"):
+        await db.save_setting(key, "")
+    return render_api_token(request, None)
 
 
 @router.get("/section/{section}", response_class=HTMLResponse)
@@ -80,6 +122,45 @@ async def save_ai_settings(
     await db.save_setting(f"ai_model_{provider}", model.strip())
     await db.save_setting("ai_extra_instructions", extra_instructions.strip())
     return await render_section(request, "ai", editing=False)
+
+
+@router.post("/section/email", response_class=HTMLResponse)
+async def save_email_settings(
+    request: Request,
+    smtp_host: str = Form(""),
+    smtp_port: str = Form("587"),
+    smtp_username: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from: str = Form(""),
+):
+    db = request.app.state.db
+    await db.save_setting("smtp_host", smtp_host.strip())
+    await db.save_setting("smtp_port", smtp_port.strip() or "587")
+    await db.save_setting("smtp_username", smtp_username.strip())
+    await db.save_setting("smtp_from", smtp_from.strip())
+    # Like the AI key: a blank field keeps the saved password, which is never shown again
+    if smtp_password:
+        await db.save_setting("smtp_password", smtp_password)
+    return await render_section(request, "email", editing=False)
+
+
+@router.post("/email/test", response_class=HTMLResponse)
+async def send_test_email(request: Request):
+    """Sends a test message to the From address, to check the email settings before an invoice depends on them."""
+    config = mail_config(await request.app.state.db.get_all_settings())
+    if not config:
+        return alert_response("Add an email server and From address first.")
+    message = build_message(
+        config,
+        to=config.sender,
+        subject="LoadPilot test email",
+        body="This is a test from LoadPilot. Your email settings work, so invoices can be emailed to brokers.",
+    )
+    try:
+        await asyncio.to_thread(send, config, message)
+    except MailError as e:
+        return alert_response(str(e))
+    return alert_response(f"Test email sent to {config.sender}. Check that inbox.", "success")
 
 
 @router.post("/section/{section}", response_class=HTMLResponse)

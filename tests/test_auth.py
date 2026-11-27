@@ -1,4 +1,5 @@
 import logging
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -126,6 +127,89 @@ def test_protected_routes_require_login(client):
     assert client.get("/api/loads/").status_code == 401
     assert client.get("/static/invoices/invoice_INV-1001.pdf", follow_redirects=False).status_code == 303
     assert client.post("/delete-load-web/1", follow_redirects=False).status_code == 303
+
+
+# -----------------------------------------
+# API token, for other apps
+# -----------------------------------------
+def create_api_token(client) -> str:
+    html = client.post("/settings/api-token").text
+    assert "It won't be shown again" in html
+    return re.search(r'value="(lp_[^"]+)"', html).group(1)
+
+
+def other_app(token: str | None) -> TestClient:
+    """A bank feed or bookkeeping script: no login, only the token (when it has one)."""
+    other = TestClient(app_module.app)
+    if token:
+        other.headers["Authorization"] = f"Bearer {token}"
+    return other
+
+
+INVOICED_LOAD = {
+    "broker_name": "Acme Logistics",
+    "load_reference": "PO-1",
+    "rate_amount": 2500,
+    "pickup_location": "Dallas, TX",
+    "pickup_date": "2026-11-20",
+    "delivery_location": "Atlanta, GA",
+    "delivery_date": "2026-11-22",
+    "status": "Invoiced",
+    "invoice_number": "INV-1001",
+    "invoiced_at": "2026-11-23T09:00:00",
+}
+
+
+def test_api_token_lets_another_app_record_payments(client):
+    bank_feed = other_app(create_api_token(client))
+
+    load = bank_feed.post("/api/loads/", json=INVOICED_LOAD)
+    payment = bank_feed.post("/api/payments/", json={"invoice_number": "INV-1001", "amount": 2450})
+
+    assert load.status_code == 200
+    assert payment.status_code == 200
+    assert payment.json()["status"] == "Paid"
+    assert bank_feed.get("/api/loads/").json()[0]["amount_paid"] == 2450
+    assert other_app(None).get("/api/loads/").status_code == 401
+    assert other_app("lp_wrong").get("/api/loads/").status_code == 401
+    assert other_app("").get("/api/loads/", headers={"Authorization": "Basic abc"}).status_code == 401
+
+
+def test_api_token_never_opens_the_pages_or_settings(client):
+    bank_feed = other_app(create_api_token(client))
+
+    assert bank_feed.get("/", follow_redirects=False).headers["location"] == "/login?next=/"
+    assert bank_feed.get("/static/invoices/invoice_INV-1001.pdf", follow_redirects=False).status_code == 303
+    # It can't make itself a new token, or revoke the owner's
+    assert bank_feed.post("/settings/api-token", follow_redirects=False).status_code == 303
+    assert bank_feed.post("/settings/api-token/revoke", follow_redirects=False).status_code == 303
+    assert bank_feed.get("/api/loads/").status_code == 200
+
+
+async def test_only_a_hash_of_the_token_is_kept(client, db):
+    token = create_api_token(client)
+
+    settings = await db.get_all_settings()
+    page = client.get("/settings").text
+
+    assert token not in str(settings)
+    assert settings["api_token_hash"] == auth.hash_api_token(token)
+    assert token not in page
+    assert f'Token ending in <span class="font-mono">…{token[-4:]}</span>' in page
+
+
+def test_replacing_or_revoking_the_token_cuts_off_the_old_one(client):
+    first = create_api_token(client)
+    second = create_api_token(client)  # Replace
+
+    assert other_app(first).get("/api/loads/").status_code == 401
+    assert other_app(second).get("/api/loads/").status_code == 200
+
+    revoked = client.post("/settings/api-token/revoke").text
+
+    assert other_app(second).get("/api/loads/").status_code == 401
+    assert "Create API Token" in revoked
+    assert "Create API Token" in client.get("/settings").text
 
 
 def test_public_assets_stay_open(client):

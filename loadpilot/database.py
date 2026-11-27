@@ -1,5 +1,7 @@
 import json
 import logging
+import sqlite3
+from contextlib import closing
 from datetime import date, datetime
 
 import aiosqlite
@@ -124,14 +126,25 @@ class DatabaseManager:
             logger.info("Database initialized successfully.")
 
     async def _migrate(self, db: aiosqlite.Connection):
-        """Applies each migration newer than the database's PRAGMA user_version, in order."""
+        """Applies each migration newer than the database's PRAGMA user_version, in order.
+
+        A migration and its version bump commit together or not at all (SQLite's ALTER TABLE is transactional):
+        if one fails or the app stops part-way, the next start retries it from a clean slate, instead of
+        failing on a column the half-done attempt already added.
+        """
         async with db.execute("PRAGMA user_version") as cursor:
             current_version = (await cursor.fetchone())[0]
 
         for version, statements in enumerate(MIGRATIONS[current_version:], start=current_version + 1):
-            for statement in statements:
-                await db.execute(statement)
-            await db.execute(f"PRAGMA user_version = {version}")
+            await db.execute("BEGIN")
+            try:
+                for statement in statements:
+                    await db.execute(statement)
+                await db.execute(f"PRAGMA user_version = {version}")
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
             logger.info(f"Applied database migration {version}.")
 
     # -----------------------------------------
@@ -217,8 +230,8 @@ class DatabaseManager:
                     rate_amount, pickup_location, pickup_date, delivery_location,
                     delivery_date, actual_delivery_date, loaded_miles, empty_miles, deadhead_origin, status,
                     notes, rate_con_pdf_path, bol_pdf_path, invoice_pdf_path, created_at, invoiced_at, paid_at,
-                    amount_paid, charges, stops
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    amount_paid, charges, stops, invoice_emailed_at, invoice_emailed_to
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     load.invoice_number,
                     load.broker_name,
@@ -244,6 +257,8 @@ class DatabaseManager:
                     load.amount_paid,
                     json_list("charges", load.charges),
                     json_list("stops", load.stops),
+                    load.invoice_emailed_at.isoformat() if load.invoice_emailed_at else None,
+                    load.invoice_emailed_to,
                 ),
             )
             await db.commit()
@@ -353,6 +368,8 @@ class DatabaseManager:
             amount_paid=row["amount_paid"],
             charges=json.loads(row["charges"]),
             stops=json.loads(row["stops"]),
+            invoice_emailed_at=datetime.fromisoformat(row["invoice_emailed_at"]) if row["invoice_emailed_at"] else None,
+            invoice_emailed_to=row["invoice_emailed_to"],
         )
 
     async def get_earned_loads(self) -> list[Load]:
@@ -373,6 +390,30 @@ class DatabaseManager:
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("SELECT broker_name, broker_email FROM loads ORDER BY id DESC") as cursor:
                 return [tuple(row) for row in await cursor.fetchall()]
+
+    async def get_document_paths(self) -> set[str]:
+        """The web path of every rate con, BOL and invoice a load links to."""
+        async with aiosqlite.connect(self.db_path) as db:
+            query = "SELECT rate_con_pdf_path, bol_pdf_path, invoice_pdf_path FROM loads"
+            async with db.execute(query) as cursor:
+                return {path for row in await cursor.fetchall() for path in row if path}
+
+    async def get_all_loads(self) -> list[Load]:
+        """Every load, oldest delivery first: the export's rows."""
+        return await self._fetch_loads(
+            "SELECT * FROM loads ORDER BY coalesce(actual_delivery_date, delivery_date), id", ()
+        )
+
+    async def get_load_years(self) -> list[int]:
+        """Years loads were delivered in (or are due to be), newest first: the export's year choices."""
+        query = "SELECT DISTINCT substr(coalesce(actual_delivery_date, delivery_date), 1, 4) FROM loads ORDER BY 1 DESC"
+        async with aiosqlite.connect(self.db_path) as db, db.execute(query) as cursor:
+            return [int(row[0]) for row in await cursor.fetchall()]
+
+    def snapshot(self, target: str):
+        """Copies the database to target as one consistent file, even while LoadPilot is writing to it."""
+        with closing(sqlite3.connect(self.db_path)) as source, closing(sqlite3.connect(target)) as copy:
+            source.backup(copy)
 
     async def get_load_by_invoice_number(self, invoice_number: str) -> Load | None:
         loads = await self._fetch_loads("SELECT * FROM loads WHERE invoice_number = ?", (invoice_number,))
