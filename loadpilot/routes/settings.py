@@ -54,6 +54,7 @@ async def render_section(request: Request, section: str, editing: bool, provider
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request):
     context = await section_context(request, "company", editing=False)
+    context["export_years"] = await request.app.state.db.get_load_years()
     return templates.TemplateResponse(request=request, name="settings.html", context=context)
 
 
