@@ -53,6 +53,18 @@ def test_pwa_assets_are_served(client):
         assert client.get(path).headers["content-type"] == "image/png", path
 
 
+def test_pages_load_no_scripts_from_other_sites(client):
+    # A CDN that's down, or a weak signal at a truck stop, mustn't leave the app without htmx
+    templates_dir = Path(__file__).resolve().parents[1] / "templates"
+    for template in templates_dir.rglob("*.html"):
+        assert not re.search(r"<script[^>]*\ssrc=\"https?://", template.read_text()), template.name
+
+    scripts = re.findall(r"<script[^>]*\ssrc=\"([^\"]+)\"", client.get("/").text)
+    assert "/static/vendor/htmx-1.9.12.min.js" in scripts
+    for src in scripts:
+        assert client.get(src).headers["content-type"].startswith("text/javascript"), src
+
+
 def test_pages_render(client):
     for path in ("/", "/loads", "/loads/new", "/settings", "/analytics", "/analytics?period=all"):
         assert client.get(path).status_code == 200, path
