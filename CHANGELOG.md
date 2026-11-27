@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0](https://github.com/Fahmula/loadpilot/compare/v1.4.1...v1.5.0) (2026-11-27)
+
+
+### Features
+
+* email invoices to brokers from the load page ([#40](https://github.com/Fahmula/loadpilot/issues/40)) ([b7616cd](https://github.com/Fahmula/loadpilot/commit/b7616cdbbb3ad119be123522687d7d2779753534))
+* export loads as CSV and download a full backup ([#39](https://github.com/Fahmula/loadpilot/issues/39)) ([c1fed9d](https://github.com/Fahmula/loadpilot/commit/c1fed9dfd06b98569c83bc289e190d73e7564867))
+* let other apps use the API with a token ([#37](https://github.com/Fahmula/loadpilot/issues/37)) ([79ffcef](https://github.com/Fahmula/loadpilot/commit/79ffcefa008ab094c225f222b2a636013d7f7478))
+* track expenses and show profit per mile ([#41](https://github.com/Fahmula/loadpilot/issues/41)) ([5245b5a](https://github.com/Fahmula/loadpilot/commit/5245b5a727af3d81aea4dffdb0aa88fcb78c17f1))
+
+
+### Bug Fixes
+
+* apply each database migration all or nothing ([#35](https://github.com/Fahmula/loadpilot/issues/35)) ([d79ccf7](https://github.com/Fahmula/loadpilot/commit/d79ccf7b9fd0aba8a7cda4c73ff4eeb037a70426))
+* delete a load's documents along with the load ([#33](https://github.com/Fahmula/loadpilot/issues/33)) ([0fd9fc6](https://github.com/Fahmula/loadpilot/commit/0fd9fc61b2f74009279579fd94f42f02e7cce1e8))
+* don't point Outlook users at a server that may refuse them ([#43](https://github.com/Fahmula/loadpilot/issues/43)) ([4ba28ce](https://github.com/Fahmula/loadpilot/commit/4ba28cef7571e79fd0b41dd7d0acced279910a99))
+* run the container as a regular user, not root ([#36](https://github.com/Fahmula/loadpilot/issues/36)) ([1ce54a3](https://github.com/Fahmula/loadpilot/commit/1ce54a329b99149fa367603408749232e75dec6b))
+* serve htmx from LoadPilot instead of unpkg ([#34](https://github.com/Fahmula/loadpilot/issues/34)) ([9d342c7](https://github.com/Fahmula/loadpilot/commit/9d342c7344cc56fabe7b2ffe433965de2ca80c6a))
+
 ## [1.4.1](https://github.com/Fahmula/loadpilot/compare/v1.4.0...v1.4.1) (2026-11-26)
 
 
