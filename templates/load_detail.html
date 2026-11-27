@@ -250,6 +250,27 @@
                     <button type="submit" class="btn btn-outline w-full rounded-xl border-base-300" title="Rebuild the PDF after editing the load or its charges">{{ icon("receipt", "size-5 text-primary") }} Rebuild</button>
                 </form>
             </div>
+
+            {% if mail_ready %}
+            <form class="mt-4" hx-post="/loads/{{ load.id }}/email-invoice" hx-target="#email-result" hx-disabled-elt="find button">
+                <div class="grid grid-cols-[1fr_auto] gap-2">
+                    <label class="input w-full rounded-xl">
+                        {{ icon("mail", "size-4 shrink-0 text-base-content/50") }}
+                        <input type="email" name="to" value="{{ load.invoice_emailed_to or load.broker_email or '' }}" placeholder="Broker's billing email" aria-label="Send the invoice to" required>
+                    </label>
+                    <button type="submit" class="btn btn-primary rounded-xl">
+                        <span class="htmx-indicator loading loading-spinner loading-sm"></span>
+                        {{ "Resend" if load.invoice_emailed_at else "Email" }}
+                    </button>
+                </div>
+                {% if load.invoice_emailed_at %}
+                <p class="mt-2 text-xs text-base-content/60">Emailed to {{ load.invoice_emailed_to }} on {{ load.invoice_emailed_at | short_date }}.</p>
+                {% endif %}
+                <div id="email-result"></div>
+            </form>
+            {% else %}
+            <p class="mt-4 text-xs text-base-content/60">Set up <a href="/settings" class="link">Invoice Email</a> in Settings to email invoices to brokers from here.</p>
+            {% endif %}
             {% endif %}
 
             <form method="post" action="/loads/{{ load.id }}/paid" class="mt-5 border-t border-base-300 pt-4">

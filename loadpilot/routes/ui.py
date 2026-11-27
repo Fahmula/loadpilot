@@ -22,6 +22,7 @@ from loadpilot.documents import (
     with_document,
 )
 from loadpilot.geo import estimate_road_miles, nearest_place
+from loadpilot.mailer import MailError, build_message, is_address, mail_config, send
 from loadpilot.models import Charge, Load, LoadStatus, Stop
 from loadpilot.templating import STATUS_STYLES, alert_response, templates
 
@@ -105,7 +106,13 @@ async def new_load_page(request: Request):
 async def load_detail_page(request: Request, load_id: int):
     db = request.app.state.db
     load = await get_load_or_404(db, load_id)
-    context = {"load": load, "terms": payment_terms(await db.get_all_settings()), "today": date.today()}
+    settings = await db.get_all_settings()
+    context = {
+        "load": load,
+        "terms": payment_terms(settings),
+        "today": date.today(),
+        "mail_ready": mail_config(settings) is not None,
+    }
     return templates.TemplateResponse(request=request, name="load_detail.html", context=context)
 
 
@@ -349,6 +356,69 @@ async def rebuild_invoice(request: Request, load_id: int):
         rebuilt += "&bol_missing=1"
     await db.update_load(load_id, {"invoice_pdf_path": invoice_web_path})
     return RedirectResponse(url=f"/loads/{load_id}?{rebuilt}#payment", status_code=303)
+
+
+def invoice_email(load: Load, settings: dict) -> tuple[str, str]:
+    """The subject and body of the email that carries an invoice to the broker."""
+    company = settings.get("company_name") or "LoadPilot"
+    terms = payment_terms(settings)
+    due = due_date(load, terms)
+    delivered = load.actual_delivery_date or load.delivery_date
+    signature = [
+        settings.get("mc_number") and f"MC# {settings['mc_number']}",
+        settings.get("company_phone"),
+        settings.get("company_email"),
+    ]
+    lines = [
+        "Hello,",
+        "",
+        f"Attached is invoice {load.invoice_number} for load {load.load_reference}, {load.pickup_location} to "
+        f"{load.delivery_location}, delivered {delivered:%b %-d, %Y}."
+        + (" The signed BOL is included." if load.bol_pdf_path else ""),
+        "",
+        f"Amount due: ${load.total_amount:,.2f}" + (f", due {due:%b %-d, %Y} (net {terms})." if due else "."),
+        "",
+        "Thank you,",
+        company,
+    ]
+    if any(signature):
+        lines.append(" · ".join(part for part in signature if part))
+    subject = f"Invoice {load.invoice_number} · Load {load.load_reference} · {company}"
+    return subject, "\n".join(lines)
+
+
+@router.post("/loads/{load_id}/email-invoice", response_class=HTMLResponse)
+async def email_invoice(request: Request, load_id: int, to: str = Form(...)):
+    """Emails the invoice PDF, signed BOL included, to the broker; answers with an alert for the load page."""
+    db = request.app.state.db
+    load = await get_load_or_404(db, load_id)
+    to = to.strip()
+    if not load.invoice_pdf_path:
+        return alert_response("Generate the invoice first.")
+    if not is_address(to):
+        return alert_response("Enter one email address, like billing@broker.com.")
+    settings = await db.get_all_settings()
+    config = mail_config(settings)
+    if not config:
+        return alert_response("Set up Invoice Email in Settings first.")
+    try:
+        pdf = (INVOICE_DIR / Path(load.invoice_pdf_path).name).read_bytes()
+    except OSError:
+        return alert_response("The invoice PDF is missing. Rebuild it, then send again.")
+
+    subject, body = invoice_email(load, settings)
+    attachment = (f"Invoice-{load.invoice_number}.pdf", pdf)
+    reply_to = settings.get("company_email") or None
+    try:
+        await asyncio.to_thread(send, config, build_message(config, to, subject, body, [attachment], reply_to))
+    except MailError as e:
+        return alert_response(str(e))
+
+    sent = {"invoice_emailed_at": datetime.now().replace(microsecond=0), "invoice_emailed_to": to}
+    if not load.broker_email:
+        sent["broker_email"] = to  # remembered for this broker's next load too
+    await db.update_load(load_id, sent)
+    return alert_response(f"Invoice {load.invoice_number} emailed to {to}.", "success")
 
 
 @router.post("/loads/{load_id}/charges")

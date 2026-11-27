@@ -58,6 +58,8 @@ class Load(BaseModel):
     amount_paid: float | None = None
     charges: list[Charge] = []
     stops: list[Stop] = []
+    invoice_emailed_at: datetime | None = None
+    invoice_emailed_to: str | None = None
 
     @property
     def total_amount(self) -> float:

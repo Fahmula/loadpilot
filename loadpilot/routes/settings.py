@@ -6,11 +6,12 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from loadpilot.ai import PROVIDERS, AIError, build_prompt, list_models, load_ai_config, suggest_model
-from loadpilot.templating import templates
+from loadpilot.mailer import MailError, build_message, mail_config, send
+from loadpilot.templating import alert_response, templates
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
-Section = Literal["company", "ai", "bank"]
+Section = Literal["company", "ai", "bank", "email"]
 
 # Which settings keys the simple cards edit (the AI card has its own handler)
 SECTION_FIELDS = {
@@ -36,9 +37,11 @@ ID_PREFIXES = {
 
 async def section_context(request: Request, section: str, editing: bool, provider: str | None = None) -> dict:
     db = request.app.state.db
+    settings = await db.get_all_settings()
     return {
         "section": section,
-        "settings": await db.get_all_settings(),
+        "settings": settings,
+        "mail": mail_config(settings),
         "editing": editing,
         "ai": await load_ai_config(db, provider),
         "providers": PROVIDERS,
@@ -80,6 +83,45 @@ async def save_ai_settings(
     await db.save_setting(f"ai_model_{provider}", model.strip())
     await db.save_setting("ai_extra_instructions", extra_instructions.strip())
     return await render_section(request, "ai", editing=False)
+
+
+@router.post("/section/email", response_class=HTMLResponse)
+async def save_email_settings(
+    request: Request,
+    smtp_host: str = Form(""),
+    smtp_port: str = Form("587"),
+    smtp_username: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from: str = Form(""),
+):
+    db = request.app.state.db
+    await db.save_setting("smtp_host", smtp_host.strip())
+    await db.save_setting("smtp_port", smtp_port.strip() or "587")
+    await db.save_setting("smtp_username", smtp_username.strip())
+    await db.save_setting("smtp_from", smtp_from.strip())
+    # Like the AI key: a blank field keeps the saved password, which is never shown again
+    if smtp_password:
+        await db.save_setting("smtp_password", smtp_password)
+    return await render_section(request, "email", editing=False)
+
+
+@router.post("/email/test", response_class=HTMLResponse)
+async def send_test_email(request: Request):
+    """Sends a test message to the From address, to check the email settings before an invoice depends on them."""
+    config = mail_config(await request.app.state.db.get_all_settings())
+    if not config:
+        return alert_response("Add an email server and From address first.")
+    message = build_message(
+        config,
+        to=config.sender,
+        subject="LoadPilot test email",
+        body="This is a test from LoadPilot. Your email settings work, so invoices can be emailed to brokers.",
+    )
+    try:
+        await asyncio.to_thread(send, config, message)
+    except MailError as e:
+        return alert_response(str(e))
+    return alert_response(f"Test email sent to {config.sender}. Check that inbox.", "success")
 
 
 @router.post("/section/{section}", response_class=HTMLResponse)
