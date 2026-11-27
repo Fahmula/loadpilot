@@ -65,6 +65,18 @@
         </form>
     </section>
 
+    <!-- API access, for other apps -->
+    <section class="card-soft p-5">
+        <div class="mb-4 flex items-center gap-3">
+            {{ icon_tile("lock", "primary") }}
+            <div>
+                <h2 class="font-bold">API Access</h2>
+                <p class="text-xs text-base-content/60">For other apps, like a bank feed</p>
+            </div>
+        </div>
+        {% include "partials/api_token.html" %}
+    </section>
+
     <!-- About -->
     <section class="card-soft flex items-center gap-3 p-5">
         {{ icon_tile("info", "neutral") }}
