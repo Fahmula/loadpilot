@@ -46,6 +46,7 @@
     <nav class="dock dock-lg z-40 border-t border-base-300 bg-base-100/95 backdrop-blur pb-[env(safe-area-inset-bottom)]" aria-label="Main">
         {{ nav_item("/", "Dashboard", "gauge", request.url.path == "/") }}
         {{ nav_item("/loads", "Loads", "list", request.url.path.startswith("/loads")) }}
+        {{ nav_item("/expenses", "Expenses", "wallet", request.url.path == "/expenses") }}
         {{ nav_item("/analytics", "Analytics", "chart-line", request.url.path == "/analytics") }}
         {{ nav_item("/settings", "Settings", "settings", request.url.path == "/settings") }}
     </nav>

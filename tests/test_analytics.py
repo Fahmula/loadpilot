@@ -7,10 +7,11 @@ from loadpilot.analytics import (
     days_overdue,
     due_date,
     payment_terms,
+    percent_change,
     previous_window,
     receivables,
 )
-from loadpilot.models import Charge, LoadStatus
+from loadpilot.models import Charge, Expense, ExpenseCategory, LoadStatus
 
 from .conftest import make_load
 
@@ -202,3 +203,43 @@ def test_revenue_follows_the_status_not_a_stray_amount():
     load = delivered(date(2026, 10, 2), rate=2000).model_copy(update={"amount_paid": 1500})
 
     assert load.revenue == 2000
+
+
+def expense(day: date, amount: float, category=ExpenseCategory.FUEL):
+    return Expense(spent_on=day, category=category, amount=amount)
+
+
+def test_expenses_and_profit_in_the_same_windows_as_revenue():
+    loads = [delivered(date(2026, 10, 2), rate=3000, miles=900, empty=100), delivered(date(2026, 9, 10), rate=2000)]
+    expenses = [
+        expense(date(2026, 10, 3), 600),
+        expense(date(2026, 10, 15), 400, ExpenseCategory.INSURANCE),
+        expense(date(2026, 10, 18), 200),
+        expense(date(2026, 9, 12), 500),  # inside Sep 1-20: the previous period
+        expense(date(2026, 9, 28), 9999),  # after Sep 20: not comparable
+    ]
+
+    a = build_analytics(loads, "month", TODAY, expenses)
+
+    assert a["current"].expenses == 1200
+    assert a["current"].profit == 1800
+    assert a["current"].profit_per_mile == pytest.approx(1800 / 1000)  # empty miles count
+    assert a["changes"]["expenses"] == pytest.approx(140.0)  # 500 -> 1200
+    assert a["changes"]["profit"] == pytest.approx((1800 - 1500) / 1500 * 100)
+    assert [(c["category"], c["amount"], c["percent"]) for c in a["expense_categories"]] == [
+        (ExpenseCategory.FUEL, 800, 67),
+        (ExpenseCategory.INSURANCE, 400, 33),
+    ]
+    assert a["tracks_expenses"]
+
+
+def test_a_loss_turning_into_a_profit_reads_as_a_rise():
+    assert percent_change(50, -100) == pytest.approx(150.0)
+    assert percent_change(-50, 100) == pytest.approx(-150.0)
+
+
+def test_without_expenses_profit_is_not_shown():
+    a = build_analytics([delivered(date(2026, 10, 2))], "month", TODAY)
+
+    assert not a["tracks_expenses"]
+    assert a["current"].profit == a["current"].revenue

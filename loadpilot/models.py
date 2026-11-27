@@ -87,6 +87,27 @@ class Load(BaseModel):
         return (self.loaded_miles or 0) + (self.empty_miles or 0)
 
 
+class ExpenseCategory(StrEnum):
+    FUEL = "Fuel"
+    MAINTENANCE = "Maintenance & repairs"
+    TOLLS = "Tolls & scales"
+    INSURANCE = "Insurance"
+    TRUCK_PAYMENT = "Truck & trailer payment"
+    PERMITS = "Permits & fees"
+    PARKING = "Parking"
+    OTHER = "Other"
+
+
+class Expense(BaseModel):
+    """A cost of running the truck, counted against revenue in Analytics on the day it was paid."""
+
+    id: int | None = None
+    spent_on: date
+    category: ExpenseCategory
+    amount: float = Field(gt=0)
+    note: str | None = None
+
+
 class User(BaseModel):
     id: int
     username: str

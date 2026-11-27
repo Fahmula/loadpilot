@@ -5,7 +5,7 @@ from datetime import date, datetime
 import aiosqlite
 from pydantic import BaseModel
 
-from loadpilot.models import Charge, Load, LoadStatus, Stop, User
+from loadpilot.models import Charge, Expense, Load, LoadStatus, Stop, User
 
 logger = logging.getLogger("loadpilot.database")
 
@@ -59,6 +59,19 @@ MIGRATIONS: list[list[str]] = [
     # 8: stops between the first pickup and the final delivery, as a JSON list of {kind, location, stop_date}
     [
         "ALTER TABLE loads ADD COLUMN stops TEXT NOT NULL DEFAULT '[]'",
+    ],
+    # 9: expenses (fuel, repairs, insurance...), for profit in Analytics
+    [
+        """
+        CREATE TABLE expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            spent_on TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
     ],
 ]
 
@@ -376,6 +389,36 @@ class DatabaseManager:
                 for status, count in await cursor.fetchall():
                     counts[LoadStatus(status)] = count
         return counts
+
+    # -----------------------------------------
+    # EXPENSES
+    # -----------------------------------------
+    async def add_expense(self, expense: Expense) -> Expense:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO expenses (spent_on, category, amount, note) VALUES (?, ?, ?, ?)",
+                (expense.spent_on.isoformat(), expense.category.value, expense.amount, expense.note),
+            )
+            await db.commit()
+            return expense.model_copy(update={"id": cursor.lastrowid})
+
+    async def get_expenses(self, limit: int | None = None) -> list[Expense]:
+        """Newest first."""
+        query = "SELECT id, spent_on, category, amount, note FROM expenses ORDER BY spent_on DESC, id DESC"
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query + (" LIMIT ?" if limit else ""), (limit,) if limit else ()) as cursor:
+                return [Expense(**dict(row)) for row in await cursor.fetchall()]
+
+    async def count_expenses(self) -> int:
+        async with aiosqlite.connect(self.db_path) as db, db.execute("SELECT COUNT(*) FROM expenses") as cursor:
+            return (await cursor.fetchone())[0]
+
+    async def delete_expense(self, expense_id: int) -> bool:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+            await db.commit()
+            return cursor.rowcount > 0
 
     async def _fetch_loads(self, query: str, params: tuple) -> list[Load]:
         async with aiosqlite.connect(self.db_path) as db:

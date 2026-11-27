@@ -55,7 +55,10 @@ def last4(value: str | None) -> str:
 
 
 def money(value: float | None, cents: bool = True) -> str:
-    return f"${value or 0:,.2f}" if cents else f"${value or 0:,.0f}"
+    """$1,234.50, or -$500.00 for a loss (not $-500.00)."""
+    value = round(value or 0, 2 if cents else 0)
+    text = f"${abs(value):,.2f}" if cents else f"${abs(value):,.0f}"
+    return "-" + text if value < 0 else text
 
 
 def miles(value: int | None) -> str:

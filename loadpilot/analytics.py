@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from loadpilot.models import Load, LoadStatus
+from loadpilot.models import Expense, ExpenseCategory, Load, LoadStatus
 
 PERIODS = {"week": "This Week", "month": "This Month", "year": "This Year", "all": "All Time"}
 PREVIOUS_LABELS = {"week": "last week", "month": "last month", "year": "last year"}
@@ -18,6 +18,7 @@ class Totals:
     miles: int = 0
     empty_miles: int = 0
     loads: int = 0
+    expenses: float = 0.0
 
     @property
     def rpm(self) -> float:
@@ -33,6 +34,16 @@ class Totals:
     def deadhead_pct(self) -> float:
         total = self.miles + self.empty_miles
         return self.empty_miles / total * 100 if total else 0.0
+
+    @property
+    def profit(self) -> float:
+        return self.revenue - self.expenses
+
+    @property
+    def profit_per_mile(self) -> float:
+        """Profit per mile driven, empty miles included: what each mile actually left in the driver's pocket."""
+        total = self.miles + self.empty_miles
+        return self.profit / total if total else 0.0
 
     def add(self, load: Load):
         self.revenue += load.revenue
@@ -71,7 +82,8 @@ def previous_window(period: str, start: date, today: date) -> tuple[date, date]:
 def percent_change(current: float, previous: float) -> float | None:
     if not previous:
         return None
-    return (current - previous) / previous * 100
+    # Against the size of the previous figure, so going from a loss to a profit reads as a rise
+    return (current - previous) / abs(previous) * 100
 
 
 def month_starts(today: date, count: int) -> list[date]:
@@ -81,7 +93,9 @@ def month_starts(today: date, count: int) -> list[date]:
     return starts
 
 
-def build_analytics(loads: list[Load], period: str = "month", today: date | None = None) -> dict:
+def build_analytics(
+    loads: list[Load], period: str = "month", today: date | None = None, expenses: list[Expense] | None = None
+) -> dict:
     today = today or date.today()
     if period not in PERIODS:
         period = "month"
@@ -100,6 +114,19 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
             brokers.setdefault(load.broker_name, Totals()).add(load)
         elif previous_start and previous_start <= day <= previous_end:
             previous.add(load)
+
+    # Expenses count on the day they were paid, in the same windows as the revenue they're set against
+    categories: dict[ExpenseCategory, float] = {}
+    for expense in expenses or []:
+        if start is None or start <= expense.spent_on <= today:
+            current.expenses += expense.amount
+            categories[expense.category] = categories.get(expense.category, 0.0) + expense.amount
+        elif previous_start and previous_start <= expense.spent_on <= previous_end:
+            previous.expenses += expense.amount
+    expense_categories = [
+        {"category": category, "amount": amount, "percent": round(amount / current.expenses * 100)}
+        for category, amount in sorted(categories.items(), key=lambda item: item[1], reverse=True)
+    ]
 
     # Revenue per calendar month for the chart, oldest first
     starts = month_starts(today, TREND_MONTHS)
@@ -130,10 +157,14 @@ def build_analytics(loads: list[Load], period: str = "month", today: date | None
             "rpm": percent_change(current.rpm, previous.rpm) if has_comparison else None,
             "all_in_rpm": percent_change(current.all_in_rpm, previous.all_in_rpm) if has_comparison else None,
             "loads": percent_change(current.loads, previous.loads) if has_comparison else None,
+            "expenses": percent_change(current.expenses, previous.expenses) if has_comparison else None,
+            "profit": percent_change(current.profit, previous.profit) if has_comparison else None,
         },
         "trend": trend,
         "trend_peak": peak,
         "brokers": [{"name": name, "totals": totals} for name, totals in top_brokers],
+        "tracks_expenses": bool(expenses),
+        "expense_categories": expense_categories,
     }
 
 
