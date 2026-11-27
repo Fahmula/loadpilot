@@ -1,0 +1,30 @@
+# LoadPilot: load management and invoicing for owner-operators.
+#
+#   docker compose up -d
+#
+# Then open http://<this machine>:8000 and create your account.
+# Everything LoadPilot keeps lives in ./config next to this file; back it up, or use Settings > Download Backup.
+
+services:
+  loadpilot:
+    image: ghcr.io/fahmula/loadpilot:latest  # or pin a release, e.g. :1.5
+    container_name: loadpilot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # behind a reverse proxy on this machine, use "127.0.0.1:8000:8000"
+    volumes:
+      - ./config:/config  # database, rate cons, BOLs, invoices and logs
+    environment:
+      # Your time zone, so "today" is your day: delivery dates, invoice dates and due dates
+      TZ: America/Chicago
+      # The user LoadPilot runs as, and the owner of ./config. Use your own: `id -u` and `id -g`
+      PUID: "1000"
+      PGID: "1000"
+      # Behind a reverse proxy (Caddy, Nginx Proxy Manager, Traefik...): the proxy's address or network, or "*"
+      # if nothing but the proxy can reach LoadPilot. Without it, one person's wrong passwords lock out everyone,
+      # and the login cookie isn't marked secure. LoadPilot logs a warning with the address to use.
+      # FORWARDED_ALLOW_IPS: "*"
+      # Optional: an AI key for scanning rate cons. You can also paste one in Settings instead.
+      # GEMINI_API_KEY: ""
+      # OPENAI_API_KEY: ""
+      # OPENROUTER_API_KEY: ""
