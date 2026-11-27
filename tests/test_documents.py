@@ -6,6 +6,8 @@ import pytest
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
+from loadpilot import documents
+from loadpilot.cli import clean_documents
 from loadpilot.config import RATECON_DIR
 from loadpilot.documents import (
     UnreadableDocument,
@@ -19,7 +21,7 @@ from loadpilot.documents import (
     with_document,
 )
 
-from .conftest import HEIC_PHOTO
+from .conftest import HEIC_PHOTO, make_load
 
 
 def png(size=(40, 60)) -> bytes:
@@ -141,3 +143,24 @@ def test_invoice_is_never_returned_without_its_document(tmp_path):
         with_document(pdf(), broken)
     with pytest.raises(UnreadableDocument):
         with_document(pdf(), tmp_path / "missing.pdf")
+
+
+async def test_clean_documents_lists_then_deletes_files_no_load_links_to(db, tmp_path, monkeypatch):
+    folders = {prefix: tmp_path / prefix.split("/")[1] for prefix in documents.DOCUMENT_FOLDERS}
+    for folder in folders.values():
+        folder.mkdir()
+    monkeypatch.setattr(documents, "DOCUMENT_FOLDERS", folders)
+    linked = folders["static/ratecons/"] / "ratecon_1_abc123.pdf"
+    pending = folders["static/ratecons/"] / f"pending_{'a' * 32}.pdf"
+    orphans = [folders["static/bols/"] / "bol_7_def456.pdf", folders["static/invoices/"] / "invoice_INV-1007.pdf"]
+    for path in [linked, pending, *orphans]:
+        path.write_bytes(pdf())
+    await db.add_load(make_load(rate_con_pdf_path="static/ratecons/ratecon_1_abc123.pdf"))
+
+    assert await clean_documents(db) == sorted(orphans)
+    assert all(path.exists() for path in orphans)  # listing alone deletes nothing
+
+    await clean_documents(db, delete=True)
+
+    assert not any(path.exists() for path in orphans)
+    assert linked.exists() and pending.exists()
