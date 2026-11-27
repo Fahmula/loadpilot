@@ -5,6 +5,7 @@ import re
 from datetime import date, timedelta
 
 import aiosqlite
+import pytest
 
 from loadpilot import database
 from loadpilot.database import MIGRATIONS, DatabaseManager
@@ -93,10 +94,12 @@ def test_expenses_need_a_login(client):
     assert add(client).headers["location"].startswith("/login")
 
 
-async def test_migration_adds_the_expenses_table(tmp_path, monkeypatch):
+# 8: v1.4.1, released before invoice email or expenses; 9: with invoice email (#40) but not expenses
+@pytest.mark.parametrize("version", [8, 9])
+async def test_upgrading_adds_expenses_and_keeps_invoice_email(tmp_path, monkeypatch, version):
     manager = DatabaseManager(db_path=str(tmp_path / "legacy.db"))
     with monkeypatch.context() as patch:
-        patch.setattr(database, "MIGRATIONS", MIGRATIONS[:8])
+        patch.setattr(database, "MIGRATIONS", MIGRATIONS[:version])
         await manager.init_db()
 
     await manager.init_db()
@@ -104,4 +107,8 @@ async def test_migration_adds_the_expenses_table(tmp_path, monkeypatch):
     async with aiosqlite.connect(manager.db_path) as db:
         async with db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'expenses'") as cursor:
             assert await cursor.fetchone() is not None
+        async with db.execute("PRAGMA table_info(loads)") as cursor:
+            assert {"invoice_emailed_at", "invoice_emailed_to"} <= {row[1] for row in await cursor.fetchall()}
     assert await manager.get_expenses() == []
+    saved = await manager.add_load(make_load())  # loads still save and read back with every column in place
+    assert (await manager.get_load(saved.id)).invoice_emailed_at is None

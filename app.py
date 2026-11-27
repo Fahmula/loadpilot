@@ -11,7 +11,7 @@ from loadpilot import __version__
 from loadpilot.auth import SESSION_MAX_AGE, AuthMiddleware, HttpsSessionMiddleware, LoginThrottle, load_secret_key
 from loadpilot.config import BOL_DIR, DB_PATH, INVOICE_DIR, LOG_DIR, RATECON_DIR, ensure_data_dirs
 from loadpilot.database import DatabaseManager
-from loadpilot.routes import api, auth, expenses, settings, ui
+from loadpilot.routes import api, auth, expenses, export, settings, ui
 
 ensure_data_dirs()
 
@@ -84,6 +84,7 @@ app.include_router(api.router)
 app.include_router(api.payments_router)
 app.include_router(auth.router)
 app.include_router(expenses.router)
+app.include_router(export.router)
 app.include_router(settings.router)
 app.include_router(ui.router)
 

@@ -62,7 +62,12 @@ MIGRATIONS: list[list[str]] = [
     [
         "ALTER TABLE loads ADD COLUMN stops TEXT NOT NULL DEFAULT '[]'",
     ],
-    # 9: expenses (fuel, repairs, insurance...), for profit in Analytics
+    # 9: when and to whom the invoice was last emailed
+    [
+        "ALTER TABLE loads ADD COLUMN invoice_emailed_at TEXT",
+        "ALTER TABLE loads ADD COLUMN invoice_emailed_to TEXT",
+    ],
+    # 10: expenses (fuel, repairs, insurance...), for profit in Analytics
     [
         """
         CREATE TABLE expenses (
