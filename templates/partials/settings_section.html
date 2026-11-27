@@ -117,7 +117,7 @@
                        placeholder="{% if settings.smtp_password %}Saved. Type a new one to replace it{% else %}Password or app password{% endif %}"></label>
             <label class="floating-label"><span>From address</span>
                 <input type="email" name="smtp_from" class="input w-full" placeholder="From address (if not the username)" value="{{ settings.smtp_from or '' }}" autocomplete="off"></label>
-            <p class="-mt-1 text-xs text-base-content/60">Gmail: smtp.gmail.com, port 587, and an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" class="link">app password</a>. Outlook: smtp.office365.com, port 587. The password is stored on your server and never shown again.</p>
+            <p class="-mt-1 text-xs text-base-content/60">Gmail: smtp.gmail.com, port 587, and an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" class="link">app password</a> (needs 2-Step Verification). Other providers list their SMTP server in their help pages; the port is usually 587 or 465. The password is stored on your server and never shown again.</p>
         {% endif %}
         <div class="flex gap-2 pt-1">
             <button type="button" class="btn btn-ghost flex-1 rounded-xl" hx-get="/settings/section/{{ section }}" hx-target="{{ target }}" hx-swap="outerHTML">Cancel</button>
