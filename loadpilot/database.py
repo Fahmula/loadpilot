@@ -1,5 +1,7 @@
 import json
 import logging
+import sqlite3
+from contextlib import closing
 from datetime import date, datetime
 
 import aiosqlite
@@ -378,6 +380,23 @@ class DatabaseManager:
             query = "SELECT rate_con_pdf_path, bol_pdf_path, invoice_pdf_path FROM loads"
             async with db.execute(query) as cursor:
                 return {path for row in await cursor.fetchall() for path in row if path}
+
+    async def get_all_loads(self) -> list[Load]:
+        """Every load, oldest delivery first: the export's rows."""
+        return await self._fetch_loads(
+            "SELECT * FROM loads ORDER BY coalesce(actual_delivery_date, delivery_date), id", ()
+        )
+
+    async def get_load_years(self) -> list[int]:
+        """Years loads were delivered in (or are due to be), newest first: the export's year choices."""
+        query = "SELECT DISTINCT substr(coalesce(actual_delivery_date, delivery_date), 1, 4) FROM loads ORDER BY 1 DESC"
+        async with aiosqlite.connect(self.db_path) as db, db.execute(query) as cursor:
+            return [int(row[0]) for row in await cursor.fetchall()]
+
+    def snapshot(self, target: str):
+        """Copies the database to target as one consistent file, even while LoadPilot is writing to it."""
+        with closing(sqlite3.connect(self.db_path)) as source, closing(sqlite3.connect(target)) as copy:
+            source.backup(copy)
 
     async def get_load_by_invoice_number(self, invoice_number: str) -> Load | None:
         loads = await self._fetch_loads("SELECT * FROM loads WHERE invoice_number = ?", (invoice_number,))

@@ -57,6 +57,7 @@ async def render_section(request: Request, section: str, editing: bool, provider
 async def settings_page(request: Request):
     context = await section_context(request, "company", editing=False)
     context["token"] = api_token_on_file(context["settings"])
+    context["export_years"] = await request.app.state.db.get_load_years()
     return templates.TemplateResponse(request=request, name="settings.html", context=context)
 
 

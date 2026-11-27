@@ -77,6 +77,28 @@
         {% include "partials/api_token.html" %}
     </section>
 
+    <!-- Export & backup -->
+    <section class="card-soft p-5">
+        <div class="mb-4 flex items-center gap-3">
+            {{ icon_tile("download", "primary") }}
+            <div>
+                <h2 class="font-bold">Export &amp; Backup</h2>
+                <p class="text-xs text-base-content/60">For your accountant, or a copy to keep</p>
+            </div>
+        </div>
+        <form method="get" action="/export/loads.csv" class="grid grid-cols-[1fr_auto] gap-3">
+            <select name="year" class="select w-full rounded-xl" aria-label="Which loads">
+                <option value="">All loads</option>
+                {% for year in export_years %}
+                <option value="{{ year }}">Delivered in {{ year }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline rounded-xl border-base-300">{{ icon("file-text", "size-5 text-primary") }} Loads CSV</button>
+        </form>
+        <a href="/export/backup.zip" class="btn btn-primary mt-3 w-full rounded-xl">{{ icon("download", "size-5") }} Download Backup</a>
+        <p class="mt-2 text-xs text-base-content/60">The backup holds your database and every rate con, BOL and invoice. To restore it, stop LoadPilot, unzip it into your <code>/config</code> folder and start it again.</p>
+    </section>
+
     <!-- About -->
     <section class="card-soft flex items-center gap-3 p-5">
         {{ icon_tile("info", "neutral") }}
