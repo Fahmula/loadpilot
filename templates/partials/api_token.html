@@ -1,0 +1,39 @@
+{# The API Access card's body, swapped in place when the token is created, replaced or revoked #}
+<div id="api-token" class="space-y-3">
+    {% if new_token %}
+    <div role="alert" class="alert alert-soft alert-success text-sm">
+        {{ icon("circle-check", "size-5") }}
+        <span>Copy this token now. It won't be shown again.</span>
+    </div>
+    <input type="text" readonly value="{{ new_token }}" class="input w-full font-mono text-sm" aria-label="API token" onclick="this.select()">
+    {% elif token %}
+    <p class="flex items-center gap-2 text-sm">
+        {{ icon("lock", "size-4 shrink-0 text-base-content/60") }}
+        <span>Token ending in <span class="font-mono">{{ token.hint }}</span>{% if token.created %}, created {{ token.created | short_date }}{% endif %}</span>
+    </p>
+    {% else %}
+    <p class="text-sm text-base-content/70">Let another app, like a bank feed or a bookkeeping script, mark invoices paid and read your loads. Nothing can use the API until you create a token.</p>
+    {% endif %}
+
+    {% if token %}
+    <details class="rounded-xl border border-base-300/70 text-sm">
+        <summary class="cursor-pointer px-4 py-3 font-medium">How to use it</summary>
+        <div class="space-y-2 px-4 pb-4 text-base-content/70">
+            <p>Send the token in an <code>Authorization</code> header. To record a broker payment:</p>
+            <pre class="overflow-x-auto rounded-lg bg-base-200 p-3 text-xs"><code>curl -X POST {{ request.base_url }}api/payments/ \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"invoice_number": "INV-1001", "amount": 2450}'</code></pre>
+            <p>The token opens the API only, never these pages. Every endpoint is listed at <a href="/docs" target="_blank" class="link">/docs</a>.</p>
+        </div>
+    </details>
+    <div class="grid grid-cols-2 gap-3">
+        <button class="btn btn-outline rounded-xl border-base-300" hx-post="/settings/api-token" hx-target="#api-token" hx-swap="outerHTML"
+                hx-confirm="Make a new token? Apps using the current one lose access.">Replace</button>
+        <button class="btn btn-soft btn-error rounded-xl" hx-post="/settings/api-token/revoke" hx-target="#api-token" hx-swap="outerHTML"
+                hx-confirm="Revoke the token? Apps using it lose access.">Revoke</button>
+    </div>
+    {% else %}
+    <button class="btn btn-primary w-full rounded-xl" hx-post="/settings/api-token" hx-target="#api-token" hx-swap="outerHTML">Create API Token</button>
+    {% endif %}
+</div>
